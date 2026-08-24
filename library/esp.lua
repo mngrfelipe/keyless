@@ -1,1627 +1,1323 @@
-    if getgenv().Library and getgenv().Library.Unload then
-        pcall(getgenv().Library.Unload, getgenv().Library)
+if getgenv().Library and getgenv().Library.Unload then
+    pcall(getgenv().Library.Unload, getgenv().Library)
+end
+
+--> Services (safe references)
+local GetService = setmetatable({}, {
+    __index = function(_, Name)
+        return game:GetService(Name)
     end
+})
 
-    local GetService = setmetatable({}, {
-        __index = function(_, Name)
-            return game:GetService(Name);
-        end;
-    })
+local Workspace   = GetService["Workspace"]
+local Players     = GetService["Players"]
+local RunService  = GetService["RunService"]
+local HttpService = GetService["HttpService"]
 
-        local Workspace, Players, RunService, HttpService = GetService["Workspace"], GetService["Players"], GetService["RunService"], GetService["HttpService"];
-        local LocalPlayer, Camera = Players.LocalPlayer, Workspace.CurrentCamera;
-        local WorldToViewportPoint, FindFirstChildOfClass, FindFirstChild = Camera.WorldToViewportPoint, game.FindFirstChildOfClass, game.FindFirstChild;
+local LocalPlayer = Players.LocalPlayer
+local Camera      = Workspace.CurrentCamera
 
-        local NewVector3, NewVector2, Dim, Dim2, DimOffset = Vector3.new, Vector2.new, UDim.new, UDim2.new, UDim2.fromOffset;
-        local NumSeq = NumberSequence.new;
-        local NumKey = NumberSequenceKeypoint.new;
+--> Localized globals for performance
+local WorldToViewportPoint  = Camera.WorldToViewportPoint
+local FindFirstChildOfClass = game.FindFirstChildOfClass
+local FindFirstChild        = game.FindFirstChild
 
-        local Format, Spawn, Clear, Floor, Clamp, Abs, Tan, Rad, Huge, Remove = string.format, task.spawn, table.clear, math.floor, math.clamp, math.abs, math.tan, math.rad, math.huge, table.remove;
-        local Frame, ZeroVector3, CameraPosition, FocalLength, ViewPortY, Updates = 1 / 60, NewVector3(0,0,0), NewVector3(0,0,0), 0, 0, 0;
+local NewVector3  = Vector3.new
+local NewVector2  = Vector2.new
+local Dim         = UDim.new
+local Dim2        = UDim2.new
+local DimOffset   = UDim2.fromOffset
+local NumSeq      = NumberSequence.new
+local NumKey      = NumberSequenceKeypoint.new
 
-        local function CameraCache()
-            ViewPortY = Camera.ViewportSize.Y;
-            CachedFocalLength = ViewPortY / (2 * Tan(Rad(Camera.FieldOfView) * 0.5));
-        end
+local Format  = string.format
+local Clear   = table.clear
+local Floor   = math.floor
+local Clamp   = math.clamp
+local Abs     = math.abs
+local Tan     = math.tan
+local Rad     = math.rad
+local Huge    = math.huge
+local Remove  = table.remove
 
-        CameraCache();
+local FRAME_BUDGET = 1 / 60
+local ZeroVector3  = NewVector3(0, 0, 0)
+local CameraPosition = NewVector3(0, 0, 0)
+local CachedFocalLength = 0
+local ViewPortY  = 0
+local LastUpdate = 0
 
-        Camera:GetPropertyChangedSignal("FieldOfView"):Connect(CameraCache);
-        Camera:GetPropertyChangedSignal("ViewportSize"):Connect(CameraCache);
+--> Camera cache — rebuilt on FOV or viewport change
+local function RebuildCameraCache()
+    ViewPortY           = Camera.ViewportSize.Y
+    CachedFocalLength   = ViewPortY / (2 * Tan(Rad(Camera.FieldOfView) * 0.5))
+end
+
+RebuildCameraCache()
+Camera:GetPropertyChangedSignal("FieldOfView"):Connect(RebuildCameraCache)
+Camera:GetPropertyChangedSignal("ViewportSize"):Connect(RebuildCameraCache)
+
+--------------------------------------------------------------------------------
+-- Library definition
+--------------------------------------------------------------------------------
 
 getgenv().Library = {
-	['Directory'] = 'Esp',
-	['Cache'] = {},
-	['Holder'] = nil,
-	['Threads'] = {},
-	['Connections'] = {},
+    Directory   = "Esp",
+    Cache       = {},
+    Holder      = nil,
+    Threads     = {},
+    Connections = {},
 
-	['Table'] = {
-		['Enabled'] = true,
-		['Distance'] = 7520,
+    Table = {
+        Enabled  = true,
+        Distance = 7520,
 
-		['Boxes'] = {
-			['Enabled'] = true,
+        Boxes = {
+            Enabled = true,
 
-			['Bounding Box'] = {
-				['Enabled'] = true,
-				['IncludeAcsessories'] = false,
-				['BoxX'] = 0,
-				['BoxY'] = 0,
-			},
+            ["Bounding Box"] = {
+                Enabled            = true,
+                IncludeAcsessories = false,
+                BoxX               = 0,
+                BoxY               = 0,
+            },
 
-			['Box Glow'] = {
-				['Enabled'] = true,
-				['Top'] = Color3.fromRGB(255, 255, 255),
-				['Bot'] = Color3.fromRGB(255, 255, 255),
-				['Transparency'] = {0.9, 0.9},
-			},
+            ["Box Glow"] = {
+                Enabled      = true,
+                Top          = Color3.fromRGB(255, 255, 255),
+                Bot          = Color3.fromRGB(255, 255, 255),
+                Transparency = { 0.9, 0.9 },
+            },
 
-			['Gradients'] = {
-				['Top'] = Color3.fromRGB(255, 255, 255),
-				['Bot'] = Color3.fromRGB(255, 255, 255),
-			},
+            Gradients = {
+                Top = Color3.fromRGB(255, 255, 255),
+                Bot = Color3.fromRGB(255, 255, 255),
+            },
 
-			['Filled'] = {
-				['Enabled'] = true,
-				['Top'] = Color3.fromRGB(255, 255, 255),
-				['Bot'] = Color3.fromRGB(255, 255, 255),
-				['Transparency'] = {1, 0.8},
-			},
-		},
+            Filled = {
+                Enabled      = true,
+                Top          = Color3.fromRGB(255, 255, 255),
+                Bot          = Color3.fromRGB(255, 255, 255),
+                Transparency = { 1, 0.8 },
+            },
+        },
 
-		['Bars'] = {
-			['Health Bar'] = {
-				['Enabled'] = true,
-				['Top'] = Color3.fromRGB(0, 255, 0),
-				['Mid'] = Color3.fromRGB(255, 170, 0),
-				['Bot'] = Color3.fromRGB(255, 0, 0),
-			},
+        Bars = {
+            ["Health Bar"] = {
+                Enabled = true,
+                Top     = Color3.fromRGB(0,   255, 0),
+                Mid     = Color3.fromRGB(255, 170, 0),
+                Bot     = Color3.fromRGB(255, 0,   0),
+            },
+            ["Armor Bar"] = {
+                Enabled = false,
+                Top     = Color3.fromRGB(255, 255, 255),
+                Mid     = Color3.fromRGB(220, 220, 220),
+                Bot     = Color3.fromRGB(180, 180, 180),
+            },
+        },
 
-			['Armor Bar'] = {
-				['Enabled'] = false,
-				['Top'] = Color3.fromRGB(255, 255, 255),
-				['Mid'] = Color3.fromRGB(220, 220, 220),
-				['Bot'] = Color3.fromRGB(180, 180, 180),
-			},
-		},
-
-		['Texts'] = {
-			['Name'] = {
-       ['Enabled'] = true,
-				['Color'] = Color3.fromRGB(255, 255, 255),
-			},
-
-			['Distance'] = {
-				['Enabled'] = true,
-				['Color'] = Color3.fromRGB(255, 255, 255),
-			},
-
-			['Weapon'] = {
-				['Enabled'] = true,
-				['Color'] = Color3.fromRGB(255, 255, 255),
-			},
-		},
-	}
+        Texts = {
+            Name = {
+                Enabled = true,
+                Color   = Color3.fromRGB(255, 255, 255),
+            },
+            Distance = {
+                Enabled = true,
+                Color   = Color3.fromRGB(255, 255, 255),
+            },
+            Weapon = {
+                Enabled = true,
+                Color   = Color3.fromRGB(255, 255, 255),
+            },
+        },
+    },
 }
-        local Table = Library['Table'];
 
-        local Fonts = {}; do
-            local function FontsRegister(Name, Weight, Style, Asset)
-                if not isfile(Asset.Id) then
-                    writefile(Asset.Id, Asset.Font)
+local Library = getgenv().Library
+local Cfg     = Library.Table
+
+Library.__index = Library
+
+--------------------------------------------------------------------------------
+-- Font registration
+--------------------------------------------------------------------------------
+
+local function RegisterFont(name, weight, style, asset)
+    if not isfile(asset.Id) then
+        writefile(asset.Id, asset.Font)
+    end
+    local fontFile = name .. ".font"
+    if isfile(fontFile) then
+        delfile(fontFile)
+    end
+    local info = {
+        name  = name,
+        faces = {
+            {
+                name    = "Normal",
+                weight  = weight,
+                style   = style,
+                assetId = getcustomasset(asset.Id),
+            },
+        },
+    }
+    writefile(fontFile, HttpService:JSONEncode(info))
+    return getcustomasset(fontFile)
+end
+
+do
+    local rawTahoma = RegisterFont("Tahoma", 400, "Normal", {
+        Id   = "Tahoma.ttf",
+        Font = game:HttpGet("https://github.com/i77lhm/storage/raw/refs/heads/main/fonts/fs-tahoma-8px.ttf"),
+    })
+
+    local rawXPTahoma = RegisterFont("XPTahoma", 400, "Normal", {
+        Id   = "Tahoma8PTBOLD.ttf",
+        Font = game:HttpGet("https://github.com/sametexe001/luas/raw/refs/heads/main/fonts/TAHOMA-8PT-BOLD-WINDOWS-XP.TTF"),
+    })
+
+    local rawSmallest = RegisterFont("SmallestPixel", 400, "Normal", {
+        Id   = "smallest_pixel-7.ttf",
+        Font = game:HttpGet("https://raw.githubusercontent.com/sametexe001/luas/main/smallest_pixel-7.ttf"),
+    })
+
+    local rawProggyTiny = RegisterFont("ProggyTiny", 400, "Normal", {
+        Id   = "ProggyTinyyyy.ttf",
+        Font = game:HttpGet("https://github.com/i77lhm/storage/raw/refs/heads/main/fonts/ProggyTiny.ttf"),
+    })
+
+    local rawProggyClean = RegisterFont("ProggyClean", 400, "Normal", {
+        Id   = "ProggyClean.ttf",
+        Font = game:HttpGet("https://github.com/i77lhm/storage/raw/main/fonts/ProggyClean.ttf"),
+    })
+
+    Library.ProggyTiny   = Font.new(rawProggyClean, Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+    Library.TahomaBold   = Font.new(rawXPTahoma,    Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+    Library.ProggyClean  = Font.new(rawProggyClean, Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+    Library.Tahoma       = Font.new(rawTahoma,       Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+    Library.SmallestPixel = Font.new(rawSmallest,   Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+end
+
+--------------------------------------------------------------------------------
+-- Helpers
+--------------------------------------------------------------------------------
+
+function Library:Make(class, props)
+    local obj = Instance.new(class)
+    for k, v in props or {} do
+        obj[k] = v
+    end
+    return obj
+end
+
+function Library:Track(name, signal, callback)
+    local conn = signal:Connect(callback)
+    self.Threads[name] = conn
+    return conn
+end
+
+Library.Holder = Library:Make("ScreenGui", {
+    Name           = "\n",
+    Parent         = gethui(),
+    ScreenInsets   = Enum.ScreenInsets.DeviceSafeInsets,
+    ZIndexBehavior = Enum.ZIndexBehavior.Global,
+    ResetOnSpawn   = false,
+    DisplayOrder   = 10000,
+    IgnoreGuiInset = true,
+})
+
+--------------------------------------------------------------------------------
+-- InitEsp — builds all GUI objects for one target
+--------------------------------------------------------------------------------
+
+function Library:InitEsp(data)
+    local obj = data.Objects
+
+    --> Root holders
+    obj.TargetHolder = self:Make("Frame", {
+        Parent               = self.Holder,
+        Visible              = false,
+        BackgroundTransparency = 1,
+        Position             = Dim2(0,0,0,0),
+        Size                 = Dim2(0,0,0,0),
+        BorderSizePixel      = 0,
+        BorderColor3         = Color3.fromRGB(0,0,0),
+        BackgroundColor3     = Color3.fromRGB(255,255,255),
+    })
+
+    obj.TopHolder = self:Make("Frame", {
+        Parent               = obj.TargetHolder,
+        AutomaticSize        = Enum.AutomaticSize.Y,
+        Visible              = true,
+        BackgroundTransparency = 1,
+        AnchorPoint          = NewVector2(0,1),
+        Position             = Dim2(0,-2,0,-5),
+        Size                 = Dim2(1,4,0,0),
+        BorderSizePixel      = 0,
+        BorderColor3         = Color3.fromRGB(0,0,0),
+        BackgroundColor3     = Color3.fromRGB(255,255,255),
+    })
+
+    obj.BottomHolder = self:Make("Frame", {
+        Parent               = obj.TargetHolder,
+        AutomaticSize        = Enum.AutomaticSize.Y,
+        Visible              = true,
+        BackgroundTransparency = 1,
+        Position             = Dim2(0,-2,1,3),
+        Size                 = Dim2(1,4,0,0),
+        BorderSizePixel      = 0,
+        BorderColor3         = Color3.fromRGB(0,0,0),
+        BackgroundColor3     = Color3.fromRGB(255,255,255),
+    })
+
+    obj.LeftHolder = self:Make("Frame", {
+        Parent               = obj.TargetHolder,
+        AutomaticSize        = Enum.AutomaticSize.X,
+        Visible              = true,
+        BackgroundTransparency = 1,
+        AnchorPoint          = NewVector2(1,0),
+        Position             = Dim2(0,-5,0,-2),
+        Size                 = Dim2(0,0,1,4),
+        BorderSizePixel      = 0,
+        BorderColor3         = Color3.fromRGB(0,0,0),
+        BackgroundColor3     = Color3.fromRGB(255,255,255),
+    })
+
+    obj.RightHolder = self:Make("Frame", {
+        Parent               = obj.TargetHolder,
+        AutomaticSize        = Enum.AutomaticSize.X,
+        Visible              = true,
+        BackgroundTransparency = 1,
+        Position             = Dim2(1,5,0,-2),
+        Size                 = Dim2(0,0,1,4),
+        BorderSizePixel      = 0,
+        BorderColor3         = Color3.fromRGB(0,0,0),
+        BackgroundColor3     = Color3.fromRGB(255,255,255),
+    })
+
+    --> Text holders
+    obj.TopTextHolder = self:Make("Frame", {
+        Parent               = obj.TopHolder,
+        AutomaticSize        = Enum.AutomaticSize.Y,
+        Visible              = true,
+        BackgroundTransparency = 1,
+        Position             = Dim2(0,0,0,0),
+        Size                 = Dim2(1,0,0,0),
+        BorderSizePixel      = 0,
+        BorderColor3         = Color3.fromRGB(0,0,0),
+        BackgroundColor3     = Color3.fromRGB(255,255,255),
+    })
+
+    obj.BottomTextHolder = self:Make("Frame", {
+        Parent               = obj.BottomHolder,
+        LayoutOrder          = 2,
+        AutomaticSize        = Enum.AutomaticSize.Y,
+        Visible              = true,
+        BackgroundTransparency = 1,
+        Position             = Dim2(0,0,0,0),
+        Size                 = Dim2(1,0,0,0),
+        BorderSizePixel      = 0,
+        BorderColor3         = Color3.fromRGB(0,0,0),
+        BackgroundColor3     = Color3.fromRGB(255,255,255),
+    })
+
+    obj.LeftTextHolder = self:Make("Frame", {
+        Parent               = obj.LeftHolder,
+        AutomaticSize        = Enum.AutomaticSize.XY,
+        Visible              = true,
+        BackgroundTransparency = 1,
+        Position             = Dim2(0,0,0,0),
+        Size                 = Dim2(1,0,0,0),
+        BorderSizePixel      = 0,
+        BorderColor3         = Color3.fromRGB(0,0,0),
+        BackgroundColor3     = Color3.fromRGB(255,255,255),
+    })
+
+    obj.RightTextHolder = self:Make("Frame", {
+        Parent               = obj.RightHolder,
+        LayoutOrder          = 2,
+        AutomaticSize        = Enum.AutomaticSize.XY,
+        Visible              = true,
+        BackgroundTransparency = 1,
+        Position             = Dim2(0,0,0,0),
+        Size                 = Dim2(0,0,0,0),
+        BorderSizePixel      = 0,
+        BorderColor3         = Color3.fromRGB(0,0,0),
+        BackgroundColor3     = Color3.fromRGB(255,255,255),
+    })
+
+    --> Bar holders
+    obj.LeftBarHolder = self:Make("Frame", {
+        Parent               = obj.LeftHolder,
+        AutomaticSize        = Enum.AutomaticSize.X,
+        Visible              = false,
+        BackgroundTransparency = 1,
+        Position             = Dim2(0,0,0,0),
+        Size                 = Dim2(0,0,1,0),
+        BorderSizePixel      = 0,
+        BorderColor3         = Color3.fromRGB(0,0,0),
+        BackgroundColor3     = Color3.fromRGB(255,255,255),
+    })
+
+    obj.BottomBarHolder = self:Make("Frame", {
+        Parent               = obj.BottomHolder,
+        LayoutOrder          = 0,
+        AutomaticSize        = Enum.AutomaticSize.Y,
+        Visible              = false,
+        BackgroundTransparency = 1,
+        Position             = Dim2(0,0,0,0),
+        Size                 = Dim2(1,0,0,0),
+        BorderSizePixel      = 0,
+        BorderColor3         = Color3.fromRGB(0,0,0),
+        BackgroundColor3     = Color3.fromRGB(255,255,255),
+    })
+
+    --> List layouts
+    self:Make("UIListLayout", { Parent = obj.TopTextHolder,    VerticalAlignment = Enum.VerticalAlignment.Bottom, HorizontalAlignment = Enum.HorizontalAlignment.Center, Padding = Dim(0,1),  SortOrder = Enum.SortOrder.LayoutOrder })
+    self:Make("UIListLayout", { Parent = obj.BottomTextHolder, HorizontalAlignment = Enum.HorizontalAlignment.Center, Padding = Dim(0,-1), SortOrder = Enum.SortOrder.LayoutOrder })
+    self:Make("UIListLayout", { Parent = obj.LeftTextHolder,   HorizontalAlignment = Enum.HorizontalAlignment.Right,  Padding = Dim(0,0),  SortOrder = Enum.SortOrder.LayoutOrder })
+    self:Make("UIListLayout", { Parent = obj.RightTextHolder,  HorizontalAlignment = Enum.HorizontalAlignment.Left,   Padding = Dim(0,0),  SortOrder = Enum.SortOrder.LayoutOrder })
+    self:Make("UIListLayout", { Parent = obj.LeftBarHolder,    FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Right,  Padding = Dim(0,5), SortOrder = Enum.SortOrder.LayoutOrder })
+    self:Make("UIListLayout", { Parent = obj.BottomBarHolder,  HorizontalAlignment = Enum.HorizontalAlignment.Center, Padding = Dim(0,5),  SortOrder = Enum.SortOrder.LayoutOrder })
+    self:Make("UIListLayout", { Parent = obj.TopHolder,        VerticalAlignment = Enum.VerticalAlignment.Bottom, Padding = Dim(0,1),  SortOrder = Enum.SortOrder.LayoutOrder })
+    self:Make("UIListLayout", { Parent = obj.BottomHolder,     Padding = Dim(0,1),  SortOrder = Enum.SortOrder.LayoutOrder })
+    self:Make("UIListLayout", { Parent = obj.LeftHolder,       FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Left,   Padding = Dim(0,1), SortOrder = Enum.SortOrder.LayoutOrder })
+    self:Make("UIListLayout", { Parent = obj.RightHolder,      FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Left,   Padding = Dim(0,1), SortOrder = Enum.SortOrder.LayoutOrder })
+
+    --> Padding
+    self:Make("UIPadding", { Parent = obj.TopTextHolder,    PaddingBottom = Dim(0,0) })
+    self:Make("UIPadding", { Parent = obj.BottomTextHolder, PaddingTop    = Dim(0,-1) })
+    self:Make("UIPadding", { Parent = obj.LeftTextHolder,   PaddingTop    = Dim(0,-3) })
+    self:Make("UIPadding", { Parent = obj.RightTextHolder,  PaddingTop    = Dim(0,-3) })
+    self:Make("UIPadding", { Parent = obj.LeftBarHolder,    PaddingRight  = Dim(0,0) })
+    self:Make("UIPadding", { Parent = obj.BottomBarHolder,  PaddingTop    = Dim(0,2) })
+    self:Make("UIPadding", { Parent = obj.LeftHolder,       PaddingRight  = Dim(0,1) })
+
+    --> Box glow + gradients
+    obj.BoxGlow = self:Make("ImageLabel", {
+        Parent             = obj.TargetHolder,
+        Image              = "rbxassetid://110204605000367",
+        ScaleType          = Enum.ScaleType.Slice,
+        SliceCenter        = Rect.new(NewVector2(21,21), NewVector2(79,79)),
+        AutomaticSize      = Enum.AutomaticSize.XY,
+        ImageTransparency  = 0.65,
+        ResampleMode       = Enum.ResamplerMode.Pixelated,
+        Visible            = true,
+        BackgroundTransparency = 1,
+        Position           = Dim2(0,-21,0,-21),
+        Size               = Dim2(0,0,0,0),
+        BorderSizePixel    = 0,
+        BorderColor3       = Color3.fromRGB(0,0,0),
+        BackgroundColor3   = Color3.fromRGB(255,255,255),
+    })
+
+    obj.BoxGlowGradient = self:Make("UIGradient", {
+        Parent       = obj.BoxGlow,
+        Rotation     = 90,
+        Color        = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(0,0,0)), ColorSequenceKeypoint.new(1, Color3.fromRGB(0,0,0)) }),
+        Transparency = NumSeq({ NumKey(0,0), NumKey(1,0) }),
+    })
+
+    self:Make("UIPadding", {
+        Parent        = obj.BoxGlow,
+        PaddingTop    = Dim(0,21),
+        PaddingBottom = Dim(0,20),
+        PaddingLeft   = Dim(0,21),
+        PaddingRight  = Dim(0,20),
+    })
+
+    obj.BoxOutlineHolder = self:Make("Frame", {
+        Parent               = obj.BoxGlow,
+        Visible              = false,
+        BackgroundTransparency = 1,
+        Position             = Dim2(0,0,0,0),
+        Size                 = Dim2(0,0,0,0),
+        BorderSizePixel      = 0,
+        BorderColor3         = Color3.fromRGB(0,0,0),
+        BackgroundColor3     = Color3.fromRGB(255,255,255),
+    })
+
+    obj.BoxOutline = self:Make("UIStroke", {
+        Parent      = obj.BoxOutlineHolder,
+        Thickness   = 3,
+        LineJoinMode = Enum.LineJoinMode.Miter,
+    })
+
+    obj.BoxOutlineGradient = self:Make("UIGradient", {
+        Parent       = obj.BoxOutline,
+        Rotation     = 90,
+        Color        = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(0,0,0)), ColorSequenceKeypoint.new(1, Color3.fromRGB(0,0,0)) }),
+        Transparency = NumSeq({ NumKey(0,0), NumKey(1,0) }),
+    })
+
+    obj.BoxInlineHolder = self:Make("Frame", {
+        Parent               = obj.BoxGlow,
+        Visible              = false,
+        BackgroundTransparency = 1,
+        Position             = Dim2(0,-1,0,-1),
+        Size                 = Dim2(0,0,0,0),
+        BorderSizePixel      = 0,
+        BorderColor3         = Color3.fromRGB(0,0,0),
+        BackgroundColor3     = Color3.fromRGB(255,255,255),
+    })
+
+    obj.BoxInline = self:Make("UIStroke", {
+        Parent      = obj.BoxInlineHolder,
+        Color       = Color3.fromRGB(255,255,255),
+        LineJoinMode = Enum.LineJoinMode.Miter,
+    })
+
+    obj.BoxInlineGradient = self:Make("UIGradient", {
+        Parent       = obj.BoxInline,
+        Rotation     = 90,
+        Color        = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(0,0,0)), ColorSequenceKeypoint.new(1, Color3.fromRGB(255,255,255)) }),
+        Transparency = NumSeq({ NumKey(0,0), NumKey(1,0) }),
+    })
+
+    obj.BoxFill = self:Make("Frame", {
+        Parent               = obj.BoxGlow,
+        Visible              = false,
+        BackgroundTransparency = 0,
+        Position             = Dim2(0,0,0,0),
+        Size                 = Dim2(0,0,0,0),
+        BorderSizePixel      = 0,
+        BorderColor3         = Color3.fromRGB(0,0,0),
+        BackgroundColor3     = Color3.fromRGB(255,255,255),
+    })
+
+    obj.BoxFillGradient = self:Make("UIGradient", {
+        Parent       = obj.BoxFill,
+        Rotation     = 90,
+        Color        = ColorSequence.new({ ColorSequenceKeypoint.new(0, Color3.fromRGB(0,0,0)), ColorSequenceKeypoint.new(1, Color3.fromRGB(255,255,255)) }),
+        Transparency = NumSeq({ NumKey(0,1), NumKey(1,1) }),
+    })
+
+    --> Health bar
+    obj.HealthBarOutline = self:Make("Frame", {
+        Parent               = obj.LeftBarHolder,
+        ZIndex               = 5,
+        LayoutOrder          = 0,
+        Visible              = false,
+        BackgroundTransparency = 0,
+        Position             = Dim2(0,0,0,0),
+        Size                 = Dim2(0,1,1,0),
+        BorderSizePixel      = 0,
+        BorderColor3         = Color3.fromRGB(0,0,0),
+        BackgroundColor3     = Color3.fromRGB(0,0,0),
+        ClipsDescendants     = false,
+    })
+
+    self:Make("UIStroke", { Parent = obj.HealthBarOutline, Thickness = 1, LineJoinMode = Enum.LineJoinMode.Miter })
+
+    obj.HealthBar = self:Make("Frame", {
+        Parent               = obj.HealthBarOutline,
+        ZIndex               = 6,
+        AnchorPoint          = NewVector2(0,1),
+        Position             = Dim2(0,0,1,0),
+        Size                 = Dim2(1,0,1,0),
+        BorderSizePixel      = 0,
+        BorderColor3         = Color3.fromRGB(0,0,0),
+        BackgroundColor3     = Color3.fromRGB(255,255,255),
+        ClipsDescendants     = true,
+    })
+
+    obj.HealthBarGradient = self:Make("UIGradient", {
+        Parent   = obj.HealthBar,
+        Rotation = 90,
+        Color    = ColorSequence.new({
+            ColorSequenceKeypoint.new(0,   Cfg.Bars["Health Bar"].Top),
+            ColorSequenceKeypoint.new(0.5, Cfg.Bars["Health Bar"].Mid),
+            ColorSequenceKeypoint.new(1,   Cfg.Bars["Health Bar"].Bot),
+        }),
+        Transparency = NumSeq({ NumKey(0,0), NumKey(1,0) }),
+    })
+
+    obj.HealthBarText = self:Make("TextLabel", {
+        Parent               = obj.HealthBarOutline,
+        FontFace             = Library.SmallestPixel,
+        TextSize             = 9,
+        ZIndex               = 10,
+        TextColor3           = Color3.fromRGB(255,255,255),
+        Text                 = "",
+        TextXAlignment       = Enum.TextXAlignment.Center,
+        TextYAlignment       = Enum.TextYAlignment.Center,
+        AnchorPoint          = NewVector2(0.5,0.5),
+        Position             = Dim2(0.5,0,1,0),
+        BorderSizePixel      = 0,
+        Visible              = false,
+        BackgroundTransparency = 1,
+        AutomaticSize        = Enum.AutomaticSize.XY,
+        Size                 = Dim2(0,0,0,0),
+    })
+
+    self:Make("UIStroke", { Parent = obj.HealthBarText, Color = Color3.fromRGB(0,0,0), LineJoinMode = Enum.LineJoinMode.Miter })
+
+    --> Armor bar
+    obj.ArmorBarOutline = self:Make("Frame", {
+        Parent               = obj.BottomBarHolder,
+        ZIndex               = 5,
+        LayoutOrder          = 0,
+        Visible              = false,
+        BackgroundTransparency = 0,
+        Position             = Dim2(0,0,0,0),
+        Size                 = Dim2(1,0,0,1),
+        BorderSizePixel      = 0,
+        BorderColor3         = Color3.fromRGB(0,0,0),
+        BackgroundColor3     = Color3.fromRGB(0,0,0),
+        ClipsDescendants     = true,
+    })
+
+    self:Make("UIStroke", { Parent = obj.ArmorBarOutline, Thickness = 1, LineJoinMode = Enum.LineJoinMode.Miter })
+
+    obj.ArmorBar = self:Make("Frame", {
+        Parent               = obj.ArmorBarOutline,
+        ZIndex               = 6,
+        AnchorPoint          = NewVector2(0,0),
+        Position             = Dim2(0,0,0,0),
+        Size                 = Dim2(1,0,1,0),
+        BorderSizePixel      = 0,
+        BorderColor3         = Color3.fromRGB(0,0,0),
+        BackgroundColor3     = Color3.fromRGB(255,255,255),
+    })
+
+    obj.ArmorBarGradient = self:Make("UIGradient", {
+        Parent   = obj.ArmorBar,
+        Rotation = 0,
+        Color    = ColorSequence.new({
+            ColorSequenceKeypoint.new(0,   Cfg.Bars["Armor Bar"].Top),
+            ColorSequenceKeypoint.new(0.5, Cfg.Bars["Armor Bar"].Mid),
+            ColorSequenceKeypoint.new(1,   Cfg.Bars["Armor Bar"].Bot),
+        }),
+        Transparency = NumSeq({ NumKey(0,0), NumKey(1,0) }),
+    })
+
+    obj.ArmorBarText = self:Make("TextLabel", {
+        Parent               = obj.ArmorBar,
+        FontFace             = Library.SmallestPixel,
+        TextSize             = 9,
+        ZIndex               = 10,
+        TextColor3           = Color3.fromRGB(255,255,255),
+        Text                 = "",
+        TextXAlignment       = Enum.TextXAlignment.Center,
+        AnchorPoint          = NewVector2(0.5,0.5),
+        Position             = Dim2(0.5,0,0.5,0),
+        BorderSizePixel      = 0,
+        Visible              = false,
+        BackgroundTransparency = 1,
+        AutomaticSize        = Enum.AutomaticSize.XY,
+        Size                 = Dim2(0,0,0,0),
+    })
+
+    self:Make("UIStroke", { Parent = obj.ArmorBarText, Color = Color3.fromRGB(0,0,0), LineJoinMode = Enum.LineJoinMode.Miter })
+
+    --> Text labels
+    obj.TargetName = self:Make("TextLabel", {
+        Parent               = obj.TopTextHolder,
+        FontFace             = Library.TahomaBold,
+        TextSize             = 12,
+        LayoutOrder          = 2,
+        TextColor3           = Cfg.Texts.Name.Color,
+        Text                 = "",
+        TextXAlignment       = Enum.TextXAlignment.Center,
+        BorderSizePixel      = 0,
+        Visible              = false,
+        BackgroundTransparency = 1,
+        ZIndex               = 5,
+        AutomaticSize        = Enum.AutomaticSize.XY,
+        Size                 = Dim2(0,0,0,0),
+    })
+
+    self:Make("UIStroke", { Parent = obj.TargetName, Color = Color3.fromRGB(0,0,0), LineJoinMode = Enum.LineJoinMode.Miter })
+
+    obj.Distance = self:Make("TextLabel", {
+        Parent               = obj.BottomTextHolder,
+        FontFace             = Library.SmallestPixel,
+        TextSize             = 9,
+        LayoutOrder          = 2,
+        TextColor3           = Cfg.Texts.Distance.Color,
+        Text                 = "",
+        TextXAlignment       = Enum.TextXAlignment.Center,
+        BorderSizePixel      = 0,
+        Visible              = false,
+        BackgroundTransparency = 1,
+        ZIndex               = 5,
+        AutomaticSize        = Enum.AutomaticSize.XY,
+        Size                 = Dim2(0,0,0,0),
+    })
+
+    self:Make("UIStroke", { Parent = obj.Distance, Color = Color3.fromRGB(0,0,0), LineJoinMode = Enum.LineJoinMode.Miter })
+
+    obj.WalkFlag = self:Make("TextLabel", {
+        Parent               = obj.RightTextHolder,
+        FontFace             = Library.SmallestPixel,
+        TextSize             = 9,
+        LayoutOrder          = 1,
+        TextColor3           = Color3.fromRGB(255,0,0),
+        Text                 = "Walking",
+        TextXAlignment       = Enum.TextXAlignment.Left,
+        BorderSizePixel      = 0,
+        Visible              = false,
+        BackgroundTransparency = 1,
+        ZIndex               = 5,
+        AutomaticSize        = Enum.AutomaticSize.XY,
+        Size                 = Dim2(0,0,0,0),
+    })
+
+    self:Make("UIStroke", { Parent = obj.WalkFlag, Color = Color3.fromRGB(0,0,0), LineJoinMode = Enum.LineJoinMode.Miter })
+
+    obj.JumpFlag = self:Make("TextLabel", {
+        Parent               = obj.RightTextHolder,
+        FontFace             = Library.SmallestPixel,
+        TextSize             = 9,
+        LayoutOrder          = 2,
+        TextColor3           = Color3.fromRGB(255,0,0),
+        Text                 = "Jumping",
+        TextXAlignment       = Enum.TextXAlignment.Left,
+        BorderSizePixel      = 0,
+        Visible              = false,
+        BackgroundTransparency = 1,
+        ZIndex               = 5,
+        AutomaticSize        = Enum.AutomaticSize.XY,
+        Size                 = Dim2(0,0,0,0),
+    })
+
+    self:Make("UIStroke", { Parent = obj.JumpFlag, Color = Color3.fromRGB(0,0,0), LineJoinMode = Enum.LineJoinMode.Miter })
+
+    obj.Weapon = self:Make("TextLabel", {
+        Parent               = obj.BottomTextHolder,
+        FontFace             = Library.SmallestPixel,
+        TextSize             = 9,
+        LayoutOrder          = 3,
+        TextColor3           = Cfg.Texts.Weapon.Color,
+        Text                 = "none",
+        TextXAlignment       = Enum.TextXAlignment.Center,
+        BorderSizePixel      = 0,
+        Visible              = false,
+        BackgroundTransparency = 1,
+        ZIndex               = 5,
+        AutomaticSize        = Enum.AutomaticSize.XY,
+        Size                 = Dim2(0,0,0,0),
+    })
+
+    self:Make("UIStroke", { Parent = obj.Weapon, Color = Color3.fromRGB(0,0,0), LineJoinMode = Enum.LineJoinMode.Miter })
+end
+
+--------------------------------------------------------------------------------
+-- CalculateBox
+--------------------------------------------------------------------------------
+
+function Library:CalculateBox(data)
+    local root = data.RootPart
+    if not root then return nil, nil, nil, nil, false end
+
+    local rootScreen, onScreen = WorldToViewportPoint(Camera, root.Position)
+    if not onScreen then return nil, nil, nil, nil, false end
+
+    local bbCfg = Cfg.Boxes["Bounding Box"]
+
+    if bbCfg.Enabled then
+        local children = data.Children
+        if not children then return nil, nil, nil, nil, false end
+
+        local minX, minY =  Huge,  Huge
+        local maxX, maxY = -Huge, -Huge
+        local hasValid   = false
+
+        for _, part in children do
+            if part:IsA("BasePart") and part.Transparency ~= 1 and part ~= root then
+                local parent = part.Parent
+                if parent == nil then continue end
+                if not data.IncludeAccessories and parent:IsA("Accessory") then continue end
+
+                local ps, pOn = WorldToViewportPoint(Camera, part.Position)
+                if not pOn or ps.Z <= 0 then continue end
+
+                hasValid = true
+
+                local cf = part.CFrame
+                local sz = part.Size
+                local hx, hy, hz = sz.X * 0.5, sz.Y * 0.5, sz.Z * 0.5
+                local rx, uy, lz = cf.RightVector, cf.UpVector, cf.LookVector
+                local ds = CachedFocalLength / ps.Z
+
+                local ex = (Abs(rx.X*hx) + Abs(uy.X*hy) + Abs(lz.X*hz)) * ds
+                local ey = (Abs(rx.Y*hx) + Abs(uy.Y*hy) + Abs(lz.Y*hz)) * ds
+
+                if ps.X - ex < minX then minX = ps.X - ex end
+                if ps.X + ex > maxX then maxX = ps.X + ex end
+                if ps.Y - ey < minY then minY = ps.Y - ey end
+                if ps.Y + ey > maxY then maxY = ps.Y + ey end
+            end
+        end
+
+        if not hasValid then return nil, nil, nil, nil, false end
+
+        local px = bbCfg.BoxX
+        local py = bbCfg.BoxY
+        local w  = (maxX - minX) + px
+        local h  = (maxY - minY) + py
+
+        return w, h, minX - (px * 0.5), minY - (py * 0.5), true
+    else
+        local scale = (root.Size.Y * ViewPortY) / (rootScreen.Z * 2)
+        local w, h  = 3 * scale, 4.5 * scale
+        return w, h, rootScreen.X - (w * 0.5), rootScreen.Y - (h * 0.5), onScreen
+    end
+end
+
+--------------------------------------------------------------------------------
+-- AddTarget
+--------------------------------------------------------------------------------
+
+function Library:AddTarget(player)
+    if player == LocalPlayer then return end
+    if self.Cache[player] then return end
+
+    local data = {
+        Player      = player,
+        Objects     = {},
+        Conns       = {},  -- always initialized so RemoveTarget never hits nil
+        Character   = nil,
+        RootPart    = nil,
+        Humanoid    = nil,
+        Children    = nil,
+        Health      = 0,
+        MaxHealth   = 100,
+        Armor       = 100,
+        MaxArmor    = 100,
+        CurrentTool = nil,
+        Alive       = false,
+        IncludeAccessories = Cfg.Boxes["Bounding Box"].IncludeAcsessories,
+
+        -- dirty-check cache
+        LastW = nil, LastH = nil, LastX = nil, LastY = nil,
+        LastGlowTop = nil, LastGlowBot = nil, LastGlowT1 = nil, LastGlowT2 = nil,
+        LastGradTop = nil, LastGradBot = nil,
+        LastFillTop = nil, LastFillBot = nil, LastFillT1 = nil, LastFillT2 = nil,
+        LastDist = nil, LastDistColor = nil,
+        LastDisplayName = nil, LastNameColor = nil,
+        LastHealthTop = nil, LastHealthMid = nil, LastHealthBot = nil,
+        LastHealthFloor = nil, LastRatio = nil,
+        LastArmorTop = nil, LastArmorMid = nil, LastArmorBot = nil,
+        LastArmorFloor = nil, LastArmorRatio = nil,
+        LastWeapon = nil, LastWeaponColor = nil,
+        WalkActive = false, JumpActive = false,
+    }
+
+    -- build GUI objects before registering in cache
+    self:InitEsp(data)
+    self.Cache[player] = data
+
+    --> Health binding
+    local function bindHealth(hum)
+        if data.Conns.Health then data.Conns.Health:Disconnect() end
+        if data.Conns.Died   then data.Conns.Died:Disconnect() end
+
+        data.Humanoid  = hum
+        data.Health    = hum.Health
+        data.MaxHealth = hum.MaxHealth
+        data.Alive     = hum.Health > 0
+
+        data.Conns.Health = hum.HealthChanged:Connect(function(hp)
+            data.Alive  = hp > 0
+            data.Health = hp
+        end)
+
+        data.Conns.Died = hum.Died:Connect(function()
+            data.Alive = false
+        end)
+    end
+
+    --> Tool binding
+    local function bindTool(char)
+        if data.Conns.ToolAdded   then data.Conns.ToolAdded:Disconnect() end
+        if data.Conns.ToolRemoved then data.Conns.ToolRemoved:Disconnect() end
+
+        if data.Children then
+            for _, child in pairs(data.Children) do
+                if child:IsA("Tool") then
+                    data.CurrentTool = child.Name
+                    break
                 end
+            end
+        end
 
-                if isfile(Name .. ".font") then
-                    delfile(Name .. ".font")
+        data.Conns.ToolAdded = char.ChildAdded:Connect(function(child)
+            if child:IsA("Tool") then data.CurrentTool = child.Name end
+        end)
+
+        data.Conns.ToolRemoved = char.ChildRemoved:Connect(function(child)
+            if child:IsA("Tool") then data.CurrentTool = nil end
+        end)
+    end
+
+    --> Children binding
+    local function bindChildren(char)
+        if data.Conns.ChildAdded   then data.Conns.ChildAdded:Disconnect() end
+        if data.Conns.ChildRemoved then data.Conns.ChildRemoved:Disconnect() end
+
+        local children    = char:GetChildren()
+        data.Children     = children
+
+        data.Conns.ChildAdded = char.ChildAdded:Connect(function(child)
+            children[#children + 1] = child
+        end)
+
+        data.Conns.ChildRemoved = char.ChildRemoved:Connect(function(child)
+            for i = #children, 1, -1 do
+                if children[i] == child then
+                    Remove(children, i)
+                    break
                 end
+            end
+        end)
 
-                local Info = {
-                    name = Name,
-                    faces = {
-                        {
-                            name = "Normal",
-                            weight = Weight,
-                            style = Style,
-                            assetId = getcustomasset(Asset.Id),
-                        },
-                    },
-                }
+        bindTool(char)
+    end
 
-                writefile(Name .. ".font", HttpService:JSONEncode(Info))
-                return getcustomasset(Name .. ".font")
-            end;
+    --> Flags binding (walk / jump indicators)
+    local function bindFlags(hum)
+        if data.Conns.MoveDir     then data.Conns.MoveDir:Disconnect() end
+        if data.Conns.StateChange then data.Conns.StateChange:Disconnect() end
 
-            Fonts.Tahoma = FontsRegister("Tahoma", 400, "Normal", {
-                Id = "Tahoma.ttf",
-                Font = game:HttpGet("https://github.com/i77lhm/storage/raw/refs/heads/main/fonts/fs-tahoma-8px.ttf"),
+        local obj          = data.Objects
+        data.JumpActive    = false
+        data.WalkActive    = false
+        obj.WalkFlag.Visible = false
+        obj.JumpFlag.Visible = false
+
+        data.Conns.MoveDir = hum:GetPropertyChangedSignal("MoveDirection"):Connect(function()
+            local walking = hum.MoveDirection ~= ZeroVector3
+
+            if walking and not data.WalkActive then
+                data.WalkActive = true
+                obj.WalkFlag.LayoutOrder = data.JumpActive and 2 or 1
+                if not data.JumpActive then obj.JumpFlag.LayoutOrder = 2 end
+                obj.WalkFlag.Visible = true
+
+            elseif not walking and data.WalkActive then
+                data.WalkActive = false
+                obj.WalkFlag.Visible = false
+                if data.JumpActive then obj.JumpFlag.LayoutOrder = 1 end
+            end
+        end)
+
+        data.Conns.StateChange = hum.StateChanged:Connect(function(_, newState)
+            local jumping = newState == Enum.HumanoidStateType.Jumping
+                         or newState == Enum.HumanoidStateType.Freefall
+
+            if jumping and not data.JumpActive then
+                data.JumpActive = true
+                obj.JumpFlag.LayoutOrder = data.WalkActive and 2 or 1
+                if not data.WalkActive then obj.WalkFlag.LayoutOrder = 2 end
+                obj.JumpFlag.Visible = true
+
+            elseif not jumping and data.JumpActive then
+                data.JumpActive = false
+                obj.JumpFlag.Visible = false
+                if data.WalkActive then obj.WalkFlag.LayoutOrder = 1 end
+            end
+        end)
+    end
+
+    --> Character handler
+    local function onCharacter(char)
+        data.Character  = char
+        data.RootPart   = nil
+        data.Humanoid   = nil
+        data.Children   = nil
+        data.Alive      = false
+        data.WalkActive = false
+        data.JumpActive = false
+
+        if not char or not char.Parent then return end
+
+        local root = FindFirstChild(char, "HumanoidRootPart")
+            or char:WaitForChild("HumanoidRootPart", 10)
+
+        local hum = FindFirstChildOfClass(char, "Humanoid")
+            or char:WaitForChild("Humanoid", 10)
+
+        -- re-check parent after yield
+        if not root or not hum or not char.Parent then return end
+
+        data.RootPart = root
+        data.Humanoid = hum
+
+        bindChildren(char)
+        bindHealth(hum)
+        bindFlags(hum)
+    end
+
+    data.Conns.CharAdded = player.CharacterAdded:Connect(function(char)
+        task.defer(onCharacter, char)
+    end)
+
+    if player.Character and player.Character.Parent then
+        task.defer(onCharacter, player.Character)
+    end
+end
+
+--------------------------------------------------------------------------------
+-- RemoveTarget — guarded against nil Conns / Objects
+--------------------------------------------------------------------------------
+
+function Library:RemoveTarget(player)
+    local data = self.Cache[player]
+    if not data then return end
+
+    -- disconnect all connections safely
+    if data.Conns then
+        for _, conn in pairs(data.Conns) do
+            pcall(function() conn:Disconnect() end)
+        end
+        Clear(data.Conns)
+    end
+
+    -- destroy root GUI frame (children go with it)
+    if data.Objects and data.Objects.TargetHolder then
+        pcall(function() data.Objects.TargetHolder:Destroy() end)
+    end
+
+    if data.Objects then
+        Clear(data.Objects)
+    end
+
+    self.Cache[player] = nil
+end
+
+--------------------------------------------------------------------------------
+-- Update — renders one target per frame budget
+--------------------------------------------------------------------------------
+
+function Library:Update(player, data)
+    -- guard: objects must exist
+    if not data or not data.Objects or not data.Objects.TargetHolder then return end
+
+    local obj = data.Objects
+
+    local function hide()
+        if obj.TargetHolder.Visible then
+            obj.TargetHolder.Visible = false
+        end
+    end
+
+    if not data.RootPart  then hide() return end
+    if not data.Alive     then hide() return end
+
+    -- guard: root part may have been removed
+    local rootOk, rootPos = pcall(function() return data.RootPart.Position end)
+    if not rootOk then hide() return end
+
+    local dist = Floor((CameraPosition - rootPos).Magnitude)
+    if dist > Cfg.Distance then hide() return end
+
+    local w, h, x, y, onScreen = self:CalculateBox(data)
+    if not onScreen or not w then hide() return end
+
+    w = Floor(w)
+    h = Floor(h)
+    x = Floor(x)
+    y = Floor(y)
+
+    if not obj.TargetHolder.Visible then
+        obj.TargetHolder.Visible = true
+    end
+
+    local sizeChanged = data.LastW ~= w or data.LastH ~= h
+    local posChanged  = data.LastX ~= x or data.LastY ~= y
+
+    if posChanged then
+        obj.TargetHolder.Position = DimOffset(x, y)
+        data.LastX = x
+        data.LastY = y
+    end
+
+    if sizeChanged then
+        obj.TargetHolder.Size        = DimOffset(w, h)
+        obj.BoxGlow.Size             = DimOffset(w, h)
+        obj.BoxOutlineHolder.Size    = DimOffset(w, h)
+        obj.BoxInlineHolder.Size     = DimOffset(w + 2, h + 2)
+        obj.BoxFill.Size             = DimOffset(w, h)
+        data.LastW = w
+        data.LastH = h
+    end
+
+    local boxCfg  = Cfg.Boxes
+    local textCfg = Cfg.Texts
+
+    --> Boxes
+    if boxCfg.Enabled then
+        local glowCfg = boxCfg["Box Glow"]
+
+        if glowCfg.Enabled then
+            if obj.BoxGlow.ImageTransparency ~= 0 then obj.BoxGlow.ImageTransparency = 0 end
+
+            local gt, gb = glowCfg.Top, glowCfg.Bot
+            if data.LastGlowTop ~= gt or data.LastGlowBot ~= gb then
+                obj.BoxGlowGradient.Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, gt), ColorSequenceKeypoint.new(1, gb) })
+                data.LastGlowTop = gt
+                data.LastGlowBot = gb
+            end
+
+            local t1, t2 = glowCfg.Transparency[1], glowCfg.Transparency[2]
+            if data.LastGlowT1 ~= t1 or data.LastGlowT2 ~= t2 then
+                obj.BoxGlowGradient.Transparency = NumSeq({ NumKey(0, t1), NumKey(1, t2) })
+                data.LastGlowT1 = t1
+                data.LastGlowT2 = t2
+            end
+        else
+            if obj.BoxGlow.ImageTransparency ~= 1 then obj.BoxGlow.ImageTransparency = 1 end
+        end
+
+        if not obj.BoxOutlineHolder.Visible then obj.BoxOutlineHolder.Visible = true end
+        if not obj.BoxInlineHolder.Visible  then obj.BoxInlineHolder.Visible  = true end
+
+        local gradTop, gradBot = boxCfg.Gradients.Top, boxCfg.Gradients.Bot
+        if data.LastGradTop ~= gradTop or data.LastGradBot ~= gradBot then
+            obj.BoxInlineGradient.Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, gradTop), ColorSequenceKeypoint.new(1, gradBot) })
+            data.LastGradTop = gradTop
+            data.LastGradBot = gradBot
+        end
+
+        if boxCfg.Filled.Enabled then
+            if not obj.BoxFill.Visible then obj.BoxFill.Visible = true end
+
+            local ft, fb = boxCfg.Filled.Top, boxCfg.Filled.Bot
+            local ft1, ft2 = boxCfg.Filled.Transparency[1], boxCfg.Filled.Transparency[2]
+
+            if data.LastFillTop ~= ft or data.LastFillBot ~= fb then
+                obj.BoxFillGradient.Color = ColorSequence.new({ ColorSequenceKeypoint.new(0, ft), ColorSequenceKeypoint.new(1, fb) })
+                data.LastFillTop = ft
+                data.LastFillBot = fb
+            end
+
+            if data.LastFillT1 ~= ft1 or data.LastFillT2 ~= ft2 then
+                obj.BoxFillGradient.Transparency = NumSeq({ NumKey(0, ft1), NumKey(1, ft2) })
+                data.LastFillT1 = ft1
+                data.LastFillT2 = ft2
+            end
+        else
+            if obj.BoxFill.Visible then obj.BoxFill.Visible = false end
+        end
+    else
+        if obj.BoxGlow.ImageTransparency ~= 1 then obj.BoxGlow.ImageTransparency = 1 end
+        if obj.BoxOutlineHolder.Visible then obj.BoxOutlineHolder.Visible = false end
+        if obj.BoxInlineHolder.Visible  then obj.BoxInlineHolder.Visible  = false end
+        if obj.BoxFill.Visible          then obj.BoxFill.Visible          = false end
+    end
+
+    --> Name
+    if textCfg.Name.Enabled then
+        if not obj.TargetName.Visible then obj.TargetName.Visible = true end
+
+        local name = player.DisplayName
+        if data.LastDisplayName ~= name then
+            obj.TargetName.Text = name
+            data.LastDisplayName = name
+        end
+
+        local nc = textCfg.Name.Color
+        if data.LastNameColor ~= nc then
+            obj.TargetName.TextColor3 = nc
+            data.LastNameColor = nc
+        end
+    else
+        if obj.TargetName.Visible then obj.TargetName.Visible = false end
+    end
+
+    --> Distance
+    if textCfg.Distance.Enabled then
+        if not obj.Distance.Visible then obj.Distance.Visible = true end
+
+        if data.LastDist ~= dist then
+            obj.Distance.Text = Format("%dst", dist)
+            data.LastDist = dist
+        end
+
+        local dc = textCfg.Distance.Color
+        if data.LastDistColor ~= dc then
+            obj.Distance.TextColor3 = dc
+            data.LastDistColor = dc
+        end
+    else
+        if obj.Distance.Visible then obj.Distance.Visible = false end
+    end
+
+    --> Health bar
+    local hpCfg    = Cfg.Bars["Health Bar"]
+    local armorCfg = Cfg.Bars["Armor Bar"]
+
+    if hpCfg.Enabled then
+        local hp      = data.Health    or 0
+        local maxHp   = data.MaxHealth or 100
+        local ratio   = Clamp(hp / maxHp, 0, 1)
+
+        if not obj.LeftBarHolder.Visible    then obj.LeftBarHolder.Visible    = true end
+        if not obj.HealthBarOutline.Visible then obj.HealthBarOutline.Visible = true end
+
+        if data.LastRatio ~= ratio then
+            obj.HealthBar.Size = Dim2(1, 0, ratio, 0)
+            data.LastRatio = ratio
+        end
+
+        local ht, hm, hb = hpCfg.Top, hpCfg.Mid, hpCfg.Bot
+        if data.LastHealthTop ~= ht or data.LastHealthMid ~= hm or data.LastHealthBot ~= hb then
+            obj.HealthBarGradient.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0,   ht),
+                ColorSequenceKeypoint.new(0.5, hm),
+                ColorSequenceKeypoint.new(1,   hb),
             })
+            data.LastHealthTop = ht
+            data.LastHealthMid = hm
+            data.LastHealthBot = hb
+        end
 
-            
-			Fonts.XPTahoma = FontsRegister("XPTahoma", 400, "Normal", {
-                Id = "Tahoma8PTBOLD.ttf",
-                Font = game:HttpGet("https://github.com/sametexe001/luas/raw/refs/heads/main/fonts/TAHOMA-8PT-BOLD-WINDOWS-XP.TTF"),
+        if not obj.HealthBarText.Visible then obj.HealthBarText.Visible = true end
+
+        local fh = Floor(hp)
+        if data.LastHealthFloor ~= fh then
+            obj.HealthBarText.Text     = Format("%d", fh)
+            obj.HealthBarText.Position = Dim2(1, -10, 1 - ratio, 1)
+            data.LastHealthFloor = fh
+        end
+    else
+        if obj.HealthBarOutline.Visible then obj.HealthBarOutline.Visible = false end
+        if obj.HealthBarText.Visible    then obj.HealthBarText.Visible    = false end
+        if not armorCfg.Enabled then
+            if obj.LeftBarHolder.Visible then obj.LeftBarHolder.Visible = false end
+        end
+    end
+
+    --> Armor bar
+    if armorCfg.Enabled then
+        local ratio = Clamp(data.Armor / data.MaxArmor, 0, 1)
+
+        if not obj.BottomBarHolder.Visible  then obj.BottomBarHolder.Visible  = true end
+        if not obj.ArmorBarOutline.Visible  then obj.ArmorBarOutline.Visible  = true end
+
+        if data.LastArmorRatio ~= ratio then
+            obj.ArmorBar.Size = Dim2(ratio, 0, 1, 0)
+            data.LastArmorRatio = ratio
+        end
+
+        local at, am, ab = armorCfg.Top, armorCfg.Mid, armorCfg.Bot
+        if data.LastArmorTop ~= at or data.LastArmorMid ~= am or data.LastArmorBot ~= ab then
+            obj.ArmorBarGradient.Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0,   at),
+                ColorSequenceKeypoint.new(0.5, am),
+                ColorSequenceKeypoint.new(1,   ab),
             })
-
-            Fonts.SmallestPixel = FontsRegister("SmallestPixel", 400, "Normal", {
-				Id = "smallest_pixel-7.ttf",
-				Font = game:HttpGet("https://raw.githubusercontent.com/sametexe001/luas/main/smallest_pixel-7.ttf")
-			})
-
-            Fonts.ProggyTiny = FontsRegister("ProggyTiny", 400, "Normal", {
-				Id = "ProggyTinyyyy.ttf",
-				Font = game:HttpGet("https://github.com/i77lhm/storage/raw/refs/heads/main/fonts/ProggyTiny.ttf")
-			})
-
-            Fonts.ProggyClean = FontsRegister("ProggyClean", 400, "Normal", {
-                Id = "ProggyClean.ttf",
-                Font = game:HttpGet("https://github.com/i77lhm/storage/raw/main/fonts/ProggyClean.ttf"),
-            })
-            Library.ProggyTiny = Font.new(Fonts.ProggyClean, Enum.FontWeight.Regular, Enum.FontStyle.Normal);
-			Library.TahomaBold = Font.new(Fonts.XPTahoma, Enum.FontWeight.Regular, Enum.FontStyle.Normal);
-            Library.ProggyClean = Font.new(Fonts.ProggyClean, Enum.FontWeight.Regular, Enum.FontStyle.Normal);
-            Library.Tahoma = Font.new(Fonts.Tahoma, Enum.FontWeight.Regular, Enum.FontStyle.Normal);
-            Library.SmallestPixel = Font.new(Fonts.SmallestPixel, Enum.FontWeight.Regular, Enum.FontStyle.Normal);
+            data.LastArmorTop = at
+            data.LastArmorMid = am
+            data.LastArmorBot = ab
         end
 
-        Library.__index = Library; print("hello")
+        if ratio < 1 then
+            if not obj.ArmorBarText.Visible then obj.ArmorBarText.Visible = true end
+            local fa = Floor(data.Armor)
+            if data.LastArmorFloor ~= fa then
+                obj.ArmorBarText.Text = Format("%d", fa)
+                data.LastArmorFloor = fa
+            end
+        else
+            if obj.ArmorBarText.Visible then obj.ArmorBarText.Visible = false end
+        end
+    else
+        if obj.BottomBarHolder.Visible  then obj.BottomBarHolder.Visible  = false end
+        if obj.ArmorBarOutline.Visible  then obj.ArmorBarOutline.Visible  = false end
+        if obj.ArmorBarText.Visible     then obj.ArmorBarText.Visible     = false end
+    end
 
-        function Library:CreateObjects(Name, Prop)
-            local New = Instance.new(Name);
+    --> Weapon
+    local wpnCfg = textCfg.Weapon
+    if wpnCfg.Enabled then
+        if not obj.Weapon.Visible then obj.Weapon.Visible = true end
 
-            for Property, Value in Prop or {} do
-                New[Property] = Value;
-            end;
-			
-            return New;
+        local tool = data.CurrentTool or "none"
+        if data.LastWeapon ~= tool then
+            obj.Weapon.Text = tool
+            data.LastWeapon = tool
         end
 
-        function Library:CreateThreads(Name, Signal, Callback)
-            local Connection = Signal:Connect(Callback);
-            self.Threads[Name] = Connection;
-            return Connection;
+        local wc = wpnCfg.Color
+        if data.LastWeaponColor ~= wc then
+            obj.Weapon.TextColor3 = wc
+            data.LastWeaponColor = wc
         end
+    else
+        if obj.Weapon.Visible then obj.Weapon.Visible = false end
+    end
+end
 
-        Library.Holder = Library:CreateObjects("ScreenGui", {
-            Name = "\n",
-            Parent = gethui(),
-            ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets,
-            ZIndexBehavior = Enum.ZIndexBehavior.Global,
-            ResetOnSpawn = false,
-            DisplayOrder = 10000,
-            IgnoreGuiInset = true,
-        })
+--------------------------------------------------------------------------------
+-- Renderer
+--------------------------------------------------------------------------------
 
-        function Library:InitEsp(Data)
-            local Objects = Data.Objects
-
-            do
-                Objects["TargetHolder"] = self:CreateObjects("Frame", {
-                    Parent = self.Holder,
-                    Visible = false,
-                    BackgroundTransparency = 1,
-                    Position = Dim2(0, 0, 0, 0),
-                    Size = Dim2(0, 0, 0, 0),
-                    BorderSizePixel = 0,
-                    BorderColor3 = Color3.fromRGB(0, 0, 0),
-                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                })
-
-                Objects["TopHolder"] = self:CreateObjects("Frame", {
-                    Parent = Objects["TargetHolder"],
-                    AutomaticSize = Enum.AutomaticSize.Y,
-                    Visible = true,
-                    BackgroundTransparency = 1,
-                    AnchorPoint = NewVector2(0, 1),
-                    Position = Dim2(0, -2, 0, -5),
-                    Size = Dim2(1, 4, 0, 0),
-                    BorderSizePixel = 0,
-                    BorderColor3 = Color3.fromRGB(0, 0, 0),
-                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                })
-
-                Objects["BottomHolder"] = self:CreateObjects("Frame", {
-                    Parent = Objects["TargetHolder"],
-                    AutomaticSize = Enum.AutomaticSize.Y,
-                    Visible = true,
-                    BackgroundTransparency = 1,
-                    Position = Dim2(0, -2, 1, 3),
-                    Size = Dim2(1, 4, 0, 0),
-                    BorderSizePixel = 0,
-                    BorderColor3 = Color3.fromRGB(0, 0, 0),
-                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                })
-
-                Objects["LeftHolder"] = self:CreateObjects("Frame", {
-                    Parent = Objects["TargetHolder"],
-                    AutomaticSize = Enum.AutomaticSize.X,
-                    Visible = true,
-                    BackgroundTransparency = 1,
-                    AnchorPoint = NewVector2(1, 0),
-                    Position = Dim2(0, -5, 0, -2),
-                    Size = Dim2(0, 0, 1, 4),
-                    BorderSizePixel = 0,
-                    BorderColor3 = Color3.fromRGB(0, 0, 0),
-                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                })
-
-                Objects["RightHolder"] = self:CreateObjects("Frame", {
-                    Parent = Objects["TargetHolder"],
-                    AutomaticSize = Enum.AutomaticSize.X,
-                    Visible = true,
-                    BackgroundTransparency = 1,
-                    Position = Dim2(1, 5, 0, -2),
-                    Size = Dim2(0, 0, 1, 4),
-                    BorderSizePixel = 0,
-                    BorderColor3 = Color3.fromRGB(0, 0, 0),
-                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                })
-            end
-
-            do
-                Objects["TopTextHolder"] = self:CreateObjects("Frame", {
-                    Parent = Objects["TopHolder"],
-                    AutomaticSize = Enum.AutomaticSize.Y,
-                    Visible = true,
-                    BackgroundTransparency = 1,
-                    Position = Dim2(0, 0, 0, 0),
-                    Size = Dim2(1, 0, 0, 0),
-                    BorderSizePixel = 0,
-                    BorderColor3 = Color3.fromRGB(0, 0, 0),
-                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                })
-
-                Objects["BottomTextHolder"] = self:CreateObjects("Frame", {
-                    Parent = Objects["BottomHolder"],
-                    LayoutOrder = 2,
-                    AutomaticSize = Enum.AutomaticSize.Y,
-                    Visible = true,
-                    BackgroundTransparency = 1,
-                    Position = Dim2(0, 0, 0, 0),
-                    Size = Dim2(1, 0, 0, 0),
-                    BorderSizePixel = 0,
-                    BorderColor3 = Color3.fromRGB(0, 0, 0),
-                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                })
-
-                Objects["LeftTextHolder"] = self:CreateObjects("Frame", {
-                    Parent = Objects["LeftHolder"],
-                    AutomaticSize = Enum.AutomaticSize.XY,
-                    Visible = true,
-                    BackgroundTransparency = 1,
-                    Position = Dim2(0, 0, 0, 0),
-                    Size = Dim2(1, 0, 0, 0),
-                    BorderSizePixel = 0,
-                    BorderColor3 = Color3.fromRGB(0, 0, 0),
-                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                })
-
-                Objects["RightTextHolder"] = self:CreateObjects("Frame", {
-                    Parent = Objects["RightHolder"],
-                    LayoutOrder = 2,
-                    AutomaticSize = Enum.AutomaticSize.XY,
-                    Visible = true,
-                    BackgroundTransparency = 1,
-                    Position = Dim2(0, 0, 0, 0),
-                    Size = Dim2(0, 0, 0, 0),
-                    BorderSizePixel = 0,
-                    BorderColor3 = Color3.fromRGB(0, 0, 0),
-                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                })
-            end
-
-            do
-                Objects["LeftBarHolder"] = self:CreateObjects("Frame", {
-                    Parent = Objects["LeftHolder"],
-                    AutomaticSize = Enum.AutomaticSize.X,
-                    Visible = false,
-                    BackgroundTransparency = 1,
-                    Position = Dim2(0, 0, 0, 0),
-                    Size = Dim2(0, 0, 1, 0),
-                    BorderSizePixel = 0,
-                    BorderColor3 = Color3.fromRGB(0, 0, 0),
-                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                })
-
-                Objects["BottomBarHolder"] = self:CreateObjects("Frame", {
-                    Parent = Objects["BottomHolder"],
-                    LayoutOrder = 0,
-                    AutomaticSize = Enum.AutomaticSize.Y,
-                    Visible = false,
-                    BackgroundTransparency = 1,
-                    Position = Dim2(0, 0, 0, 0),
-                    Size = Dim2(1, 0, 0, 0),
-                    BorderSizePixel = 0,
-                    BorderColor3 = Color3.fromRGB(0, 0, 0),
-                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                })
-            end
-
-            do
-                self:CreateObjects("UIListLayout", {
-                    Parent = Objects["TopTextHolder"],
-                    VerticalAlignment = Enum.VerticalAlignment.Bottom,
-                    HorizontalAlignment = Enum.HorizontalAlignment.Center,
-                    Padding = Dim(0, 1),
-                    SortOrder = Enum.SortOrder.LayoutOrder,
-                })
-
-                self:CreateObjects("UIListLayout", {
-                    Parent = Objects["BottomTextHolder"],
-                    HorizontalAlignment = Enum.HorizontalAlignment.Center,
-                    Padding = Dim(0, -1),
-                    SortOrder = Enum.SortOrder.LayoutOrder,
-                })
-
-                self:CreateObjects("UIListLayout", {
-                    Parent = Objects["LeftTextHolder"],
-                    HorizontalAlignment = Enum.HorizontalAlignment.Right,
-                    Padding = Dim(0, 0),
-                    SortOrder = Enum.SortOrder.LayoutOrder,
-                })
-
-                self:CreateObjects("UIListLayout", {
-                    Parent = Objects["RightTextHolder"],
-                    HorizontalAlignment = Enum.HorizontalAlignment.Left,
-                    Padding = Dim(0, 0),
-                    SortOrder = Enum.SortOrder.LayoutOrder,
-                })
-
-                self:CreateObjects("UIListLayout", {
-                    Parent = Objects["LeftBarHolder"],
-                    FillDirection = Enum.FillDirection.Horizontal,
-                    HorizontalAlignment = Enum.HorizontalAlignment.Right,
-                    Padding = Dim(0, 5),
-                    SortOrder = Enum.SortOrder.LayoutOrder,
-                })
-
-                self:CreateObjects("UIListLayout", {
-                    Parent = Objects["BottomBarHolder"],
-                    HorizontalAlignment = Enum.HorizontalAlignment.Center,
-                    Padding = Dim(0, 5),
-                    SortOrder = Enum.SortOrder.LayoutOrder,
-                })
-
-                self:CreateObjects("UIListLayout", {
-                    Parent = Objects["TopHolder"],
-                    VerticalAlignment = Enum.VerticalAlignment.Bottom,
-                    Padding = Dim(0, 1),
-                    SortOrder = Enum.SortOrder.LayoutOrder,
-                })
-
-                self:CreateObjects("UIListLayout", {
-                    Parent = Objects["BottomHolder"],
-                    Padding = Dim(0, 1),
-                    SortOrder = Enum.SortOrder.LayoutOrder,
-                })
-
-                self:CreateObjects("UIListLayout", {
-                    Parent = Objects["LeftHolder"],
-                    FillDirection = Enum.FillDirection.Horizontal,
-                    HorizontalAlignment = Enum.HorizontalAlignment.Left,
-                    Padding = Dim(0, 1),
-                    SortOrder = Enum.SortOrder.LayoutOrder,
-                })
-
-                self:CreateObjects("UIListLayout", {
-                    Parent = Objects["RightHolder"],
-                    FillDirection = Enum.FillDirection.Horizontal,
-                    HorizontalAlignment = Enum.HorizontalAlignment.Left,
-                    Padding = Dim(0, 1),
-                    SortOrder = Enum.SortOrder.LayoutOrder,
-                })
-            end
-
-            do
-                self:CreateObjects("UIPadding", {
-                    Parent = Objects["TopTextHolder"],
-                    PaddingBottom = Dim(0, 0),
-                })
-
-                self:CreateObjects("UIPadding", {
-                    Parent = Objects["BottomTextHolder"],
-                    PaddingTop = Dim(0, -1)
-                })
-
-                self:CreateObjects("UIPadding", {
-                    Parent = Objects["LeftTextHolder"],
-                    PaddingTop = Dim(0, -3),
-                })
-
-                self:CreateObjects("UIPadding", {
-                    Parent = Objects["RightTextHolder"],
-                    PaddingTop = Dim(0, -3),
-                })
-
-                self:CreateObjects("UIPadding", {
-                    Parent = Objects["LeftBarHolder"],
-                    PaddingRight = Dim(0, 0),
-                })
-
-                self:CreateObjects("UIPadding", {
-                    Parent = Objects["BottomBarHolder"],
-                    PaddingTop = Dim(0, 2),
-                })
-
-                self:CreateObjects("UIPadding", {
-                    Parent = Objects["LeftHolder"],
-                    PaddingRight = Dim(0, 1),
-                })
-            end
-
-            do
-                Objects["BoxGlow"] = self:CreateObjects("ImageLabel", {
-                    Parent = Objects["TargetHolder"],
-                    Image = "rbxassetid://110204605000367",
-                    ScaleType = Enum.ScaleType.Slice,
-                    SliceCenter = Rect.new(NewVector2(21, 21), NewVector2(79, 79)),
-                    AutomaticSize = Enum.AutomaticSize.XY,
-                    ImageTransparency = 0.65,
-                    ResampleMode = Enum.ResamplerMode.Pixelated,
-                    Visible = true,
-                    BackgroundTransparency = 1,
-                    Position = Dim2(0, -21, 0, -21),
-                    Size = Dim2(0, 0, 0, 0),
-                    BorderSizePixel = 0,
-                    BorderColor3 = Color3.fromRGB(0, 0, 0),
-                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                })
-
-                Objects["BoxGlowGradient"] = self:CreateObjects("UIGradient", {
-                    Parent = Objects["BoxGlow"],
-                    Rotation = 90,
-                    Color = ColorSequence.new({
-                        ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 0, 0)),
-                        ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0)),
-                    }),
-                    Transparency = NumSeq({NumKey(0, 0), NumKey(1, 0)}),
-                })
-
-                self:CreateObjects("UIPadding", {
-                    Parent = Objects["BoxGlow"],
-                    PaddingTop = Dim(0, 21),
-                    PaddingBottom = Dim(0, 20),
-                    PaddingLeft = Dim(0, 21),
-                    PaddingRight = Dim(0, 20),
-                })
-
-                Objects["BoxOutlineHolder"] = self:CreateObjects("Frame", {
-                    Parent = Objects["BoxGlow"],
-                    Visible = false,
-                    BackgroundTransparency = 1,
-                    Position = Dim2(0, 0, 0, 0),
-                    Size = Dim2(0, 0, 0, 0),
-                    BorderSizePixel = 0,
-                    BorderColor3 = Color3.fromRGB(0, 0, 0),
-                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                })
-
-                Objects["BoxOutline"] = self:CreateObjects("UIStroke", {
-                    Parent = Objects["BoxOutlineHolder"],
-                    Thickness = 3,
-                    LineJoinMode = Enum.LineJoinMode.Miter,
-                })
-
-                Objects["BoxOutlineGradient"] = self:CreateObjects("UIGradient", {
-                    Parent = Objects["BoxOutline"],
-                    Rotation = 90,
-                    Color = ColorSequence.new({
-                        ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 0, 0)),
-                        ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0)),
-                    }),
-                    Transparency = NumSeq({NumKey(0, 0), NumKey(1, 0)}),
-                })
-
-                Objects["BoxInlineHolder"] = self:CreateObjects("Frame", {
-                    Parent = Objects["BoxGlow"],
-                    Visible = false,
-                    BackgroundTransparency = 1,
-                    Position = Dim2(0, -1, 0, -1),
-                    Size = Dim2(0, 0, 0, 0),
-                    BorderSizePixel = 0,
-                    BorderColor3 = Color3.fromRGB(0, 0, 0),
-                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                })
-
-                Objects["BoxInline"] = self:CreateObjects("UIStroke", {
-                    Parent = Objects["BoxInlineHolder"],
-                    Color = Color3.fromRGB(255, 255, 255),
-                    LineJoinMode = Enum.LineJoinMode.Miter,
-                })
-
-                Objects["BoxInlineGradient"] = self:CreateObjects("UIGradient", {
-                    Parent = Objects["BoxInline"],
-                    Rotation = 90,
-                    Color = ColorSequence.new({
-                        ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 0, 0)),
-                        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
-                    }),
-                    Transparency = NumSeq({NumKey(0, 0), NumKey(1, 0)}),
-                })
-
-                Objects["BoxFill"] = self:CreateObjects("Frame", {
-                    Parent = Objects["BoxGlow"],
-                    Visible = false,
-                    BackgroundTransparency = 0,
-                    Position = Dim2(0, 0, 0, 0),
-                    Size = Dim2(0, 0, 0, 0),
-                    BorderSizePixel = 0,
-                    BorderColor3 = Color3.fromRGB(0, 0, 0),
-                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                })
-
-                Objects["BoxFillGradient"] = self:CreateObjects("UIGradient", {
-                    Parent = Objects["BoxFill"],
-                    Rotation = 90,
-                    Color = ColorSequence.new({
-                        ColorSequenceKeypoint.new(0, Color3.fromRGB(0, 0, 0)),
-                        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255)),
-                    }),
-                    Transparency = NumSeq({NumKey(0, 1), NumKey(1, 1)}),
-                })
-            end
-
-            do
-                Objects["HealthBarOutline"] = self:CreateObjects("Frame", {
-                    Parent = Objects["LeftBarHolder"],
-                    ZIndex = 5,
-                    LayoutOrder = 0,
-                    Visible = false,
-                    BackgroundTransparency = 0,
-                    Position = Dim2(0, 0, 0, 0),
-                    Size = Dim2(0, 1, 1, 0),
-                    BorderSizePixel = 0,
-                    BorderColor3 = Color3.fromRGB(0, 0, 0),
-                    BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-                    ClipsDescendants = false,
-                })
-
-                self:CreateObjects("UIStroke", {
-                    Parent = Objects["HealthBarOutline"],
-                    Thickness = 1,
-                    LineJoinMode = Enum.LineJoinMode.Miter,
-                })
-
-                Objects["HealthBar"] = self:CreateObjects("Frame", {
-                    Parent = Objects["HealthBarOutline"],
-                    ZIndex = 6,
-                    AnchorPoint = NewVector2(0, 1),
-                    Position = Dim2(0, 0, 1, 0),
-                    Size = Dim2(1, 0, 1, 0),
-                    BorderSizePixel = 0,
-                    BorderColor3 = Color3.fromRGB(0, 0, 0),
-                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                    ClipsDescendants = true,
-                })
-
-                Objects["HealthBarGradient"] = self:CreateObjects("UIGradient", {
-                    Parent = Objects["HealthBar"],
-                    Rotation = 90,
-                    Color = ColorSequence.new({
-                        ColorSequenceKeypoint.new(0, Table['Bars']['Health Bar']['Top']),
-                        ColorSequenceKeypoint.new(0.5, Table['Bars']['Health Bar']['Mid']),
-                        ColorSequenceKeypoint.new(1, Table['Bars']['Health Bar']['Bot']),
-                    }),
-                    Transparency = NumSeq({NumKey(0, 0), NumKey(1, 0)}),
-                })
-
-                Objects["HealthBarText"] = self:CreateObjects("TextLabel", {
-                    Parent = Objects["HealthBarOutline"],
-                    FontFace = Library.SmallestPixel,
-                    TextSize = 9,
-                    ZIndex = 10,
-                    TextColor3 = Color3.fromRGB(255, 255, 255),
-                    Text = "",
-                    TextXAlignment = Enum.TextXAlignment.Center,
-                    TextYAlignment = Enum.TextYAlignment.Center,
-                    AnchorPoint = NewVector2(0.5, 0.5),
-                    Position = Dim2(0.5, 0, 1, 0),
-                    BorderSizePixel = 0,
-                    Visible = false,
-                    BackgroundTransparency = 1,
-                    AutomaticSize = Enum.AutomaticSize.XY,
-                    Size = Dim2(0, 0, 0, 0),
-                })
-
-                self:CreateObjects("UIStroke", {
-                    Parent = Objects["HealthBarText"],
-                    Color = Color3.fromRGB(0, 0, 0),
-                    LineJoinMode = Enum.LineJoinMode.Miter,
-                })
-
-                Objects["ArmorBarOutline"] = self:CreateObjects("Frame", {
-                    Parent = Objects["BottomBarHolder"],
-                    ZIndex = 5,
-                    LayoutOrder = 0,
-                    Visible = false,
-                    BackgroundTransparency = 0,
-                    Position = Dim2(0, 0, 0, 0),
-                    Size = Dim2(1, 0, 0, 1),
-                    BorderSizePixel = 0,
-                    BorderColor3 = Color3.fromRGB(0, 0, 0),
-                    BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-                    ClipsDescendants = true,
-                })
-
-                self:CreateObjects("UIStroke", {
-                    Parent = Objects["ArmorBarOutline"],
-                    Thickness = 1,
-                    LineJoinMode = Enum.LineJoinMode.Miter,
-                })
-
-                Objects["ArmorBar"] = self:CreateObjects("Frame", {
-                    Parent = Objects["ArmorBarOutline"],
-                    ZIndex = 6,
-                    AnchorPoint = NewVector2(0, 0),
-                    Position = Dim2(0, 0, 0, 0),
-                    Size = Dim2(1, 0, 1, 0),
-                    BorderSizePixel = 0,
-                    BorderColor3 = Color3.fromRGB(0, 0, 0),
-                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                })
-
-                Objects["ArmorBarGradient"] = self:CreateObjects("UIGradient", {
-                    Parent = Objects["ArmorBar"],
-                    Rotation = 0,
-                    Color = ColorSequence.new({
-                        ColorSequenceKeypoint.new(0, Table['Bars']['Armor Bar']['Top']),
-                        ColorSequenceKeypoint.new(0.5, Table['Bars']['Armor Bar']['Mid']),
-                        ColorSequenceKeypoint.new(1, Table['Bars']['Armor Bar']['Bot']),
-                    }),
-                    Transparency = NumSeq({NumKey(0, 0), NumKey(1, 0)}),
-                })
-
-                Objects["ArmorBarText"] = self:CreateObjects("TextLabel", {
-                    Parent = Objects["ArmorBar"],
-                    FontFace = Library.SmallestPixel,
-                    TextSize = 9,
-                    ZIndex = 10,
-                    TextColor3 = Color3.fromRGB(255, 255, 255),
-                    Text = "",
-                    TextXAlignment = Enum.TextXAlignment.Center,
-                    AnchorPoint = NewVector2(0.5, 0.5),
-                    Position = Dim2(0.5, 0, 0.5, 0),
-                    BorderSizePixel = 0,
-                    Visible = false,
-                    BackgroundTransparency = 1,
-                    AutomaticSize = Enum.AutomaticSize.XY,
-                    Size = Dim2(0, 0, 0, 0),
-                })
-
-                self:CreateObjects("UIStroke", {
-                    Parent = Objects["ArmorBarText"],
-                    Color = Color3.fromRGB(0, 0, 0),
-                    LineJoinMode = Enum.LineJoinMode.Miter,
-                })
-            end
-
-            do
-                Objects["TargetName"] = self:CreateObjects("TextLabel", {
-                    Parent = Objects["TopTextHolder"],
-                    FontFace = Library.TahomaBold,
-                    TextSize = 12,
-                    LayoutOrder = 2,
-                    TextColor3 = Table['Texts']['Name']['Color'],
-                    Text = "",
-                    TextXAlignment = Enum.TextXAlignment.Center,
-                    BorderSizePixel = 0,
-                    Visible = false,
-                    BackgroundTransparency = 1,
-                    ZIndex = 5,
-                    AutomaticSize = Enum.AutomaticSize.XY,
-                    Size = Dim2(0, 0, 0, 0),
-                })
-
-                self:CreateObjects("UIStroke", {
-                    Parent = Objects["TargetName"],
-                    Color = Color3.fromRGB(0, 0, 0),
-                    LineJoinMode = Enum.LineJoinMode.Miter,
-                })
-
-                Objects["Distance"] = self:CreateObjects("TextLabel", {
-                    Parent = Objects["BottomTextHolder"],
-                    FontFace = Library.SmallestPixel,
-                    TextSize = 9,
-                    LayoutOrder = 2,
-                    TextColor3 = Table['Texts']['Distance']['Color'],
-                    Text = "",
-                    TextXAlignment = Enum.TextXAlignment.Center,
-                    BorderSizePixel = 0,
-                    Visible = false,
-                    BackgroundTransparency = 1,
-                    ZIndex = 5,
-                    AutomaticSize = Enum.AutomaticSize.XY,
-                    Size = Dim2(0, 0, 0, 0),
-                })
-
-                self:CreateObjects("UIStroke", {
-                    Parent = Objects["Distance"],
-                    Color = Color3.fromRGB(0, 0, 0),
-                    LineJoinMode = Enum.LineJoinMode.Miter,
-                })
-
-                Objects["WalkFlag"] = self:CreateObjects("TextLabel", {
-                    Parent = Objects["RightTextHolder"],
-                    FontFace = Library.SmallestPixel,
-                    TextSize = 9,
-                    LayoutOrder = 1,
-                    TextColor3 = Color3.fromRGB(255, 0, 0),
-                    Text = "Walking",
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    BorderSizePixel = 0,
-                    Visible = false,
-                    BackgroundTransparency = 1,
-                    ZIndex = 5,
-                    AutomaticSize = Enum.AutomaticSize.XY,
-                    Size = Dim2(0, 0, 0, 0),
-                })
-
-                self:CreateObjects("UIStroke", {
-                    Parent = Objects["WalkFlag"],
-                    Color = Color3.fromRGB(0, 0, 0),
-                    LineJoinMode = Enum.LineJoinMode.Miter,
-                })
-
-                Objects["JumpFlag"] = self:CreateObjects("TextLabel", {
-                    Parent = Objects["RightTextHolder"],
-                    FontFace = Library.SmallestPixel,
-                    TextSize = 9,
-                    LayoutOrder = 2,
-                    TextColor3 = Color3.fromRGB(255, 0, 0),
-                    Text = "Jumping",
-                    TextXAlignment = Enum.TextXAlignment.Left,
-                    BorderSizePixel = 0,
-                    Visible = false,
-                    BackgroundTransparency = 1,
-                    ZIndex = 5,
-                    AutomaticSize = Enum.AutomaticSize.XY,
-                    Size = Dim2(0, 0, 0, 0),
-                })
-
-                self:CreateObjects("UIStroke", {
-                    Parent = Objects["JumpFlag"],
-                    Color = Color3.fromRGB(0, 0, 0),
-                    LineJoinMode = Enum.LineJoinMode.Miter,
-                })
-
-                Objects["Weapon"] = self:CreateObjects("TextLabel", {
-                    Parent = Objects["BottomTextHolder"],
-                    FontFace = Library.SmallestPixel,
-                    TextSize = 9,
-                    LayoutOrder = 3,
-                    TextColor3 = Table['Texts']['Weapon']['Color'],
-                    Text = "none",
-                    TextXAlignment = Enum.TextXAlignment.Center,
-                    BorderSizePixel = 0,
-                    Visible = false,
-                    BackgroundTransparency = 1,
-                    ZIndex = 5,
-                    AutomaticSize = Enum.AutomaticSize.XY,
-                    Size = Dim2(0, 0, 0, 0),
-                })
-
-                self:CreateObjects("UIStroke", {
-                    Parent = Objects["Weapon"],
-                    Color = Color3.fromRGB(0, 0, 0),
-                    LineJoinMode = Enum.LineJoinMode.Miter,
-                })
+Library:Track("Renderer", RunService.RenderStepped, function()
+    if not Cfg.Enabled then
+        for _, data in pairs(Library.Cache) do
+            if data.Objects and data.Objects.TargetHolder
+            and data.Objects.TargetHolder.Visible then
+                data.Objects.TargetHolder.Visible = false
             end
         end
-
-        function Library:CalculateBox(Data)
-            local RootPart = Data['RootPart']
-
-            if not RootPart then
-                return nil, nil, nil, nil, false;
-            end;
-
-            local RootScreen, OnScreen = WorldToViewportPoint(Camera, RootPart.Position)
-
-            if not OnScreen then
-                return nil, nil, nil, nil, false;
-            end;
-
-            local BoundingBox = Table['Boxes']['Bounding Box'];
-
-            if BoundingBox['Enabled'] then
-                local Children = Data['Children'];
-
-                if not Children then
-                    return nil, nil, nil, nil, false;
-                end;
-
-                local IncludeAccessories = Data['IncludeAccessories'];
-                local ScrMinX, ScrMinY = Huge, Huge;
-                local ScrMaxX, ScrMaxY = -Huge, -Huge;
-                local HasValidParts = false;
-
-                for _, Part in Children do
-                    if Part:IsA('BasePart') and Part.Transparency ~= 1 and Part ~= RootPart then
-                        local Parent = Part.Parent
-
-                        if Parent == nil then
-                            continue
-                        end
-
-                        if not IncludeAccessories and Parent:IsA('Accessory') then
-                            continue;
-                        end;
-
-                        local PartScreen, PartOnScreen = WorldToViewportPoint(Camera, Part.Position);
-
-                        if not PartOnScreen or PartScreen.Z <= 0 then
-                            continue;
-                        end;
-
-                        HasValidParts = true;
-
-                        local Cf = Part.CFrame;
-                        local Sz = Part.Size;
-                        local HX, HY, HZ = Sz.X * 0.5, Sz.Y * 0.5, Sz.Z * 0.5;
-                        local RX, UY, LZ = Cf.RightVector, Cf.UpVector, Cf.LookVector;
-                        local DepthScale = CachedFocalLength / PartScreen.Z;
-
-                        local Ex = (Abs(RX.X * HX) + Abs(UY.X * HY) + Abs(LZ.X * HZ)) * DepthScale;
-                        local Ey = (Abs(RX.Y * HX) + Abs(UY.Y * HY) + Abs(LZ.Y * HZ)) * DepthScale;
-
-                        local PMinX, PMaxX = PartScreen.X - Ex, PartScreen.X + Ex;
-                        local PMinY, PMaxY = PartScreen.Y - Ey, PartScreen.Y + Ey;
-
-                        if PMinX < ScrMinX then ScrMinX = PMinX; end
-                        if PMaxX > ScrMaxX then ScrMaxX = PMaxX; end
-                        if PMinY < ScrMinY then ScrMinY = PMinY; end
-                        if PMaxY > ScrMaxY then ScrMaxY = PMaxY; end
-                    end;
-                end;
-
-                if not HasValidParts then
-                    return nil, nil, nil, nil, false;
-                end;
-
-                local PadX = BoundingBox['BoxX'];
-                local PadY = BoundingBox['BoxY'];
-                local W = (ScrMaxX - ScrMinX) + PadX;
-                local H = (ScrMaxY - ScrMinY) + PadY;
-
-                return W, H, ScrMinX - (PadX * 0.5), ScrMinY - (PadY * 0.5), true;
-            else
-                local Scale = (RootPart.Size.Y * ViewPortY) / (RootScreen.Z * 2);
-                local W, H = 3 * Scale, 4.5 * Scale;
-                return W, H, RootScreen.X - (W * 0.5), RootScreen.Y - (H * 0.5), OnScreen;
-            end
-        end
-
-        function Library:AddTarget(Player)
-            if Player == LocalPlayer then
-                return
-            end;
-
-            if self.Cache[Player] then
-                return
-            end;
-
-            local Data = {
-                ['Player'] = Player,
-                ['Objects'] = {},
-                ['Conns'] = {},
-                ['Character'] = nil,
-                ['RootPart'] = nil,
-                ['Humanoid'] = nil,
-                ['Children'] = nil,
-                ['Health'] = 0,
-                ['MaxHealth'] = 100,
-                ['Armor'] = 100,
-                ['MaxArmor'] = 100,
-                ['CurrentTool'] = nil,
-                ['Alive'] = false,
-                ['LastW'] = nil,
-                ['LastH'] = nil,
-                ['LastX'] = nil,
-                ['LastY'] = nil,
-                ['WalkActive'] = false,
-                ['JumpActive'] = false,
-                ['IncludeAccessories'] = Table['Boxes']['Bounding Box']['IncludeAcsessories'],
-                ['LastGlowTop'] = nil,
-                ['LastGlowBot'] = nil,
-                ['LastGlowT1'] = nil,
-                ['LastGlowT2'] = nil,
-                ['LastGradTop'] = nil,
-                ['LastGradBot'] = nil,
-                ['LastFillTop'] = nil,
-                ['LastFillBot'] = nil,
-                ['LastFillT1'] = nil,
-                ['LastFillT2'] = nil,
-                ['LastDist'] = nil,
-                ['LastDistColor'] = nil,
-                ['LastDisplayName'] = nil,
-                ['LastNameColor'] = nil,
-                ['LastHealthTop'] = nil,
-                ['LastHealthMid'] = nil,
-                ['LastHealthBot'] = nil,
-                ['LastHealthFloor'] = nil,
-                ['LastRatio'] = nil,
-                ['LastArmorTop'] = nil,
-                ['LastArmorMid'] = nil,
-                ['LastArmorBot'] = nil,
-                ['LastArmorFloor'] = nil,
-                ['LastArmorRatio'] = nil,
-                ['LastWeapon'] = nil,
-                ['LastWeaponColor'] = nil,
-            }
-            self:InitEsp(Data);
-            self['Cache'][Player] = Data;
-
-            local HealthHandler = {}; do
-                function HealthHandler.BindHealth(Humanoid)
-                    if Data['Conns']['Health'] then
-                        Data['Conns']['Health']:Disconnect()
-                    end
-
-                    if Data['Conns']['Died'] then
-                        Data['Conns']['Died']:Disconnect()
-                    end
-
-                    Data['Humanoid'] = Humanoid
-                    Data['Health'] = Humanoid.Health
-                    Data['MaxHealth'] = Humanoid.MaxHealth
-                    Data['Alive'] = Humanoid.Health > 0
-
-                    Data['Conns']['Health'] = Humanoid.HealthChanged:Connect(function(NewHealth)
-                        Data['Alive'] = NewHealth > 0
-                        Data['Health'] = NewHealth
-                    end)
-
-                    Data['Conns']['Died'] = Humanoid.Died:Connect(function()
-                        Data['Alive'] = false
-                    end)
-                end
-
-                Data['BindHealth'] = HealthHandler.BindHealth;
-            end
-
-            local ToolHandler = {}; do
-                function ToolHandler.BindTool(Character)
-                    if Data['Conns']['ToolAdded'] then
-                        Data['Conns']['ToolAdded']:Disconnect()
-                    end
-
-                    if Data['Conns']['ToolRemoved'] then
-                        Data['Conns']['ToolRemoved']:Disconnect()
-                    end
-
-                    if Data['Children'] then
-                        for _, Child in pairs(Data['Children']) do
-                            if Child:IsA('Tool') then
-                                Data['CurrentTool'] = Child.Name
-                                break
-                            end
-                        end
-                    end
-
-                    Data['Conns']['ToolAdded'] = Character.ChildAdded:Connect(function(Child)
-                        if Child:IsA('Tool') then
-                            Data['CurrentTool'] = Child.Name
-                        end
-                    end)
-
-                    Data['Conns']['ToolRemoved'] = Character.ChildRemoved:Connect(function(Child)
-                        if Child:IsA('Tool') then
-                            Data['CurrentTool'] = nil
-                        end
-                    end)
-                end
-
-                Data['BindTool'] = ToolHandler.BindTool
-            end
-
-            local ChildHandler = {}; do
-                function ChildHandler.BindChildren(Character)
-                    if Data['Conns']['ChildAdded'] then
-                        Data['Conns']['ChildAdded']:Disconnect();
-                    end;
-
-                    if Data['Conns']['ChildRemoved'] then
-                        Data['Conns']['ChildRemoved']:Disconnect();
-                    end;
-
-                    local Children = Character:GetChildren();
-                    Data['Children'] = Children;
-
-                    Data['Conns']['ChildAdded'] = Character.ChildAdded:Connect(function(Child)
-                        Children[#Children + 1] = Child;
-                    end)
-
-                    Data['Conns']['ChildRemoved'] = Character.ChildRemoved:Connect(function(Child)
-                        for I = #Children, 1, -1 do
-                            if Children[I] == Child then
-                                Remove(Children, I);
-                                break;
-                            end;
-                        end
-                    end)
-
-                    Data['BindTool'](Character);
-                end
-
-                Data['BindChildren'] = ChildHandler.BindChildren;
-            end
-
-            local FlagsHandler = {}; do
-                function FlagsHandler.BindFlags(Humanoid)
-                    if Data['Conns']['MoveDir'] then
-                        Data['Conns']['MoveDir']:Disconnect();
-                    end;
-
-                    if Data['Conns']['StateChange'] then
-                        Data['Conns']['StateChange']:Disconnect();
-                    end;
-
-                    local Objects = Data['Objects']
-                    Data['JumpActive'] = false;
-                    Data['WalkActive'] = false;
-
-                    Objects['WalkFlag'].Visible = false;
-                    Objects['JumpFlag'].Visible = false;
-
-                    Data['Conns']['MoveDir'] = Humanoid:GetPropertyChangedSignal('MoveDirection'):Connect(function()
-                        local Walking = Humanoid.MoveDirection ~= ZeroVector3;
-
-                        if Walking and not Data['WalkActive'] then
-                            Data['WalkActive'] = true;
-
-                            if Data['JumpActive'] then
-                                Objects['WalkFlag'].LayoutOrder = 2;
-                            else
-                                Objects['WalkFlag'].LayoutOrder = 1;
-                                Objects['JumpFlag'].LayoutOrder = 2;
-                            end
-
-                            Objects['WalkFlag'].Visible = true
-                        elseif not Walking and Data['WalkActive'] then
-                            Data['WalkActive'] = false;
-                            Objects['WalkFlag'].Visible = false;
-
-                            if Data['JumpActive'] then
-                                Objects['JumpFlag'].LayoutOrder = 1;
-                            end
-                        end
-                    end)
-
-                    Data['Conns']['StateChange'] = Humanoid.StateChanged:Connect(function(_, NewState)
-                        local Jumping = NewState == Enum.HumanoidStateType.Jumping or NewState == Enum.HumanoidStateType.Freefall
-
-                        if Jumping and not Data['JumpActive'] then
-                            Data['JumpActive'] = true;
-
-                            if Data['WalkActive'] then
-                                Objects['JumpFlag'].LayoutOrder = 2;
-                            else
-                                Objects['JumpFlag'].LayoutOrder = 1;
-                                Objects['WalkFlag'].LayoutOrder = 2;
-                            end
-
-                            Objects['JumpFlag'].Visible = true
-                        elseif not Jumping and Data['JumpActive'] then
-                            Data['JumpActive'] = false;
-                            Objects['JumpFlag'].Visible = false;
-
-                            if Data['WalkActive'] then
-                                Objects['WalkFlag'].LayoutOrder = 1;
-                            end
-                        end
-                    end)
-                end
-
-                Data['BindFlags'] = FlagsHandler.BindFlags;
-            end
-
-            local CharacterHandler = {}; do
-                function CharacterHandler.OnCharacter(Character)
-                    Data['Character'] = Character;
-                    Data['RootPart'] = nil;
-                    Data['Humanoid'] = nil;
-                    Data['Children'] = nil;
-                    Data['Alive'] = false;
-                    Data['WalkActive'] = false;
-                    Data['JumpActive'] = false;
-
-                    if not Character or not Character.Parent then
-                        return;
-                    end;
-
-                    local RootPart = FindFirstChild(Character, "HumanoidRootPart");
-
-                    if not RootPart then
-                        RootPart = Character:WaitForChild('HumanoidRootPart', 10);
-                    end
-
-                    local Humanoid = FindFirstChildOfClass(Character, 'Humanoid');
-
-                    if not Humanoid then
-                        Humanoid = Character:WaitForChild('Humanoid', 10);
-                    end;
-
-                    if not RootPart or not Humanoid then
-                        return;
-                    end;
-
-                    if not Character.Parent then
-                        return;
-                    end;
-
-                    Data['RootPart'] = RootPart;
-                    Data['Humanoid'] = Humanoid;
-
-                    Data['BindChildren'](Character);
-                    Data['BindHealth'](Humanoid);
-                    Data['BindFlags'](Humanoid);
-                end
-
-                Data['Conns']['CharAdded'] = Player.CharacterAdded:Connect(function(Character)
-                    task.defer(CharacterHandler.OnCharacter, Character)
-                end)
-
-                if Player.Character and Player.Character.Parent then
-                    task.defer(CharacterHandler.OnCharacter, Player.Character)
-                end
-            end
-        end
-
-        function Library:RemoveTarget(Player)
-            local Data = self['Cache'][Player];
-
-            if not Data then
-                return;
-            end;
-
-            for _, Connections in pairs(Data['Conns']) do
-                Connections:Disconnect()
-            end;
-
-            Clear(Data['Conns']);
-
-            if Data['Objects']['TargetHolder'] then
-                Data['Objects']['TargetHolder']:Destroy();
-            end;
-
-            Clear(Data['Objects']);
-            self['Cache'][Player] = nil;
-        end
-
-        function Library:Update(Player, Data)
-            local Objects = Data['Objects']
-
-            if not Data['RootPart'] then
-                if Objects['TargetHolder'].Visible then
-                    Objects['TargetHolder'].Visible = false
-                end
-                return
-            end
-
-            if not Data['Alive'] then
-                if Objects['TargetHolder'].Visible then
-                    Objects['TargetHolder'].Visible = false
-                end
-                return
-            end
-
-            local RootPos = Data['RootPart'].Position
-            local Distance = Floor((CameraPosition - RootPos).Magnitude)
-
-            if Distance > Table['Distance'] then
-                if Objects['TargetHolder'].Visible then
-                    Objects['TargetHolder'].Visible = false
-                end
-                return
-            end
-
-            local W, H, X, Y, OnScreen = self:CalculateBox(Data)
-
-            if not OnScreen or not W then
-                if Objects['TargetHolder'].Visible then
-                    Objects['TargetHolder'].Visible = false
-                end
-                return
-            end
-
-            W = Floor(W)
-            H = Floor(H)
-            X = Floor(X)
-            Y = Floor(Y)
-
-            if not Objects['TargetHolder'].Visible then
-                Objects['TargetHolder'].Visible = true
-            end
-
-            local DirtySizes = Data['LastW'] ~= W or Data['LastH'] ~= H
-            local DirtyPosition = Data['LastX'] ~= X or Data['LastY'] ~= Y
-
-            if DirtyPosition then
-                Objects['TargetHolder'].Position = DimOffset(X, Y)
-                Data['LastX'] = X
-                Data['LastY'] = Y
-            end
-
-            if DirtySizes then
-                Objects['TargetHolder'].Size = DimOffset(W, H)
-                Objects['BoxGlow'].Size = DimOffset(W, H)
-                Objects['BoxOutlineHolder'].Size = DimOffset(W, H)
-                Objects['BoxInlineHolder'].Size = DimOffset(W + 2, H + 2)
-                Objects['BoxFill'].Size = DimOffset(W, H)
-                Data['LastW'] = W
-                Data['LastH'] = H
-            end
-
-            local BoxesCfg = Table['Boxes']
-            local TextsCfg = Table['Texts']
-
-            if BoxesCfg['Enabled'] then
-                if BoxesCfg['Box Glow']['Enabled'] then
-                    if Objects['BoxGlow'].ImageTransparency ~= 0 then
-                        Objects['BoxGlow'].ImageTransparency = 0
-                    end
-
-                    local GlowTop = BoxesCfg['Box Glow']['Top']
-                    local GlowBot = BoxesCfg['Box Glow']['Bot']
-
-                    if Data['LastGlowTop'] ~= GlowTop or Data['LastGlowBot'] ~= GlowBot then
-                        Objects['BoxGlowGradient'].Color = ColorSequence.new({
-                            ColorSequenceKeypoint.new(0, GlowTop),
-                            ColorSequenceKeypoint.new(1, GlowBot),
-                        })
-                        Data['LastGlowTop'] = GlowTop
-                        Data['LastGlowBot'] = GlowBot
-                    end
-
-                    local T1 = BoxesCfg['Box Glow']['Transparency'][1]
-                    local T2 = BoxesCfg['Box Glow']['Transparency'][2]
-
-                    if Data['LastGlowT1'] ~= T1 or Data['LastGlowT2'] ~= T2 then
-                        Objects['BoxGlowGradient'].Transparency = NumSeq({NumKey(0, T1), NumKey(1, T2)})
-                        Data['LastGlowT1'] = T1
-                        Data['LastGlowT2'] = T2
-                    end
-                else
-                    if Objects['BoxGlow'].ImageTransparency ~= 1 then
-                        Objects['BoxGlow'].ImageTransparency = 1
-                    end
-                end
-
-                if not Objects['BoxOutlineHolder'].Visible then
-                    Objects['BoxOutlineHolder'].Visible = true
-                end
-
-                if not Objects['BoxInlineHolder'].Visible then
-                    Objects['BoxInlineHolder'].Visible = true
-                end
-
-                local GradTop = BoxesCfg['Gradients']['Top']
-                local GradBot = BoxesCfg['Gradients']['Bot']
-
-                if Data['LastGradTop'] ~= GradTop or Data['LastGradBot'] ~= GradBot then
-                    Objects['BoxInlineGradient'].Color = ColorSequence.new({
-                        ColorSequenceKeypoint.new(0, GradTop),
-                        ColorSequenceKeypoint.new(1, GradBot),
-                    })
-                    Data['LastGradTop'] = GradTop
-                    Data['LastGradBot'] = GradBot
-                end
-
-                if BoxesCfg['Filled']['Enabled'] then
-                    if not Objects['BoxFill'].Visible then
-                        Objects['BoxFill'].Visible = true
-                    end
-
-                    local FillTop = BoxesCfg['Filled']['Top']
-                    local FillBot = BoxesCfg['Filled']['Bot']
-                    local FillT1 = BoxesCfg['Filled']['Transparency'][1]
-                    local FillT2 = BoxesCfg['Filled']['Transparency'][2]
-
-                    if Data['LastFillTop'] ~= FillTop or Data['LastFillBot'] ~= FillBot then
-                        Objects['BoxFillGradient'].Color = ColorSequence.new({
-                            ColorSequenceKeypoint.new(0, FillTop),
-                            ColorSequenceKeypoint.new(1, FillBot),
-                        })
-                        Data['LastFillTop'] = FillTop
-                        Data['LastFillBot'] = FillBot
-                    end
-
-                    if Data['LastFillT1'] ~= FillT1 or Data['LastFillT2'] ~= FillT2 then
-                        Objects['BoxFillGradient'].Transparency = NumSeq({NumKey(0, FillT1), NumKey(1, FillT2)})
-                        Data['LastFillT1'] = FillT1
-                        Data['LastFillT2'] = FillT2
-                    end
-                else
-                    if Objects['BoxFill'].Visible then
-                        Objects['BoxFill'].Visible = false
-                    end
-                end
-            else
-                if Objects['BoxGlow'].ImageTransparency ~= 1 then
-                    Objects['BoxGlow'].ImageTransparency = 1
-                end
-
-                if Objects['BoxOutlineHolder'].Visible then
-                    Objects['BoxOutlineHolder'].Visible = false
-                end
-
-                if Objects['BoxInlineHolder'].Visible then
-                    Objects['BoxInlineHolder'].Visible = false
-                end
-
-                if Objects['BoxFill'].Visible then
-                    Objects['BoxFill'].Visible = false
-                end
-            end
-
-            if TextsCfg['Name']['Enabled'] then
-                if not Objects['TargetName'].Visible then
-                    Objects['TargetName'].Visible = true
-                end
-
-                local DisplayName = Player.DisplayName
-
-                if Data['LastDisplayName'] ~= DisplayName then
-                    Objects['TargetName'].Text = DisplayName
-                    Data['LastDisplayName'] = DisplayName
-                end
-
-                local NameColor = TextsCfg['Name']['Color']
-
-                if Data['LastNameColor'] ~= NameColor then
-                    Objects['TargetName'].TextColor3 = NameColor
-                    Data['LastNameColor'] = NameColor
-                end
-            else
-                if Objects['TargetName'].Visible then
-                    Objects['TargetName'].Visible = false
-                end
-            end
-
-            if TextsCfg['Distance']['Enabled'] then
-                if not Objects['Distance'].Visible then
-                    Objects['Distance'].Visible = true
-                end
-
-                if Data['LastDist'] ~= Distance then
-                    Objects['Distance'].Text = Format('%dst', Distance)
-                    Data['LastDist'] = Distance
-                end
-
-                local DistColor = TextsCfg['Distance']['Color']
-
-                if Data['LastDistColor'] ~= DistColor then
-                    Objects['Distance'].TextColor3 = DistColor
-                    Data['LastDistColor'] = DistColor
-                end
-            else
-                if Objects['Distance'].Visible then
-                    Objects['Distance'].Visible = false
-                end
-            end
-
-            local HealthCfg = Table['Bars']['Health Bar']
-            local ArmorCfg = Table['Bars']['Armor Bar']
-
-            if HealthCfg['Enabled'] then
-                local Health = Data['Health'] or 0
-                local MaxHealth = Data['MaxHealth'] or 100
-                local Ratio = Clamp(Health / MaxHealth, 0, 1)
-
-                if not Objects['LeftBarHolder'].Visible then
-                    Objects['LeftBarHolder'].Visible = true
-                end
-
-                if not Objects['HealthBarOutline'].Visible then
-                    Objects['HealthBarOutline'].Visible = true
-                end
-
-                if Data['LastRatio'] ~= Ratio then
-                    Objects['HealthBar'].Size = Dim2(1, 0, Ratio, 0)
-                    Data['LastRatio'] = Ratio
-                end
-
-                local GradTop = HealthCfg['Top']
-                local GradMid = HealthCfg['Mid']
-                local GradBot = HealthCfg['Bot']
-
-                if Data['LastHealthTop'] ~= GradTop or Data['LastHealthMid'] ~= GradMid or Data['LastHealthBot'] ~= GradBot then
-                    Objects['HealthBarGradient'].Color = ColorSequence.new({
-                        ColorSequenceKeypoint.new(0, GradTop),
-                        ColorSequenceKeypoint.new(0.5, GradMid),
-                        ColorSequenceKeypoint.new(1, GradBot),
-                    })
-                    Data['LastHealthTop'] = GradTop
-                    Data['LastHealthMid'] = GradMid
-                    Data['LastHealthBot'] = GradBot
-                end
-
-                if HealthCfg['Enabled'] then
-                    if not Objects['HealthBarText'].Visible then
-                        Objects['HealthBarText'].Visible = true
-                    end
-
-                    local FlooredHealth = Floor(Health)
-
-                    if Data['LastHealthFloor'] ~= FlooredHealth then
-                        Objects['HealthBarText'].Text = Format('%d', FlooredHealth)
-                        Objects['HealthBarText'].Position = Dim2(1, -10, 1 - Ratio, 1)
-                        Data['LastHealthFloor'] = FlooredHealth
-                    end
-                else
-                    if Objects['HealthBarText'].Visible then
-                        Objects['HealthBarText'].Visible = false
-                    end
-                end
-            else
-                if Objects['HealthBarOutline'].Visible then
-                    Objects['HealthBarOutline'].Visible = false
-                end
-
-                if Objects['HealthBarText'].Visible then
-                    Objects['HealthBarText'].Visible = false
-                end
-
-                if not ArmorCfg['Enabled'] then
-                    if Objects['LeftBarHolder'].Visible then
-                        Objects['LeftBarHolder'].Visible = false
-                    end
-                end
-            end
-
-            if ArmorCfg['Enabled'] then
-                local Ratio = Clamp(Data['Armor'] / Data['MaxArmor'], 0, 1)
-
-                if not Objects['BottomBarHolder'].Visible then
-                    Objects['BottomBarHolder'].Visible = true
-                end
-
-                if not Objects['ArmorBarOutline'].Visible then
-                    Objects['ArmorBarOutline'].Visible = true
-                end
-
-                if Data['LastArmorRatio'] ~= Ratio then
-                    Objects['ArmorBar'].Size = Dim2(Ratio, 0, 1, 0)
-                    Data['LastArmorRatio'] = Ratio
-                end
-
-                local GradTop = ArmorCfg['Top']
-                local GradMid = ArmorCfg['Mid']
-                local GradBot = ArmorCfg['Bot']
-
-                if Data['LastArmorTop'] ~= GradTop or Data['LastArmorMid'] ~= GradMid or Data['LastArmorBot'] ~= GradBot then
-                    Objects['ArmorBarGradient'].Color = ColorSequence.new({
-                        ColorSequenceKeypoint.new(0, GradTop),
-                        ColorSequenceKeypoint.new(0.5, GradMid),
-                        ColorSequenceKeypoint.new(1, GradBot),
-                    })
-                    Data['LastArmorTop'] = GradTop
-                    Data['LastArmorMid'] = GradMid
-                    Data['LastArmorBot'] = GradBot
-                end
-
-                if Ratio < 1 then
-                    if not Objects['ArmorBarText'].Visible then
-                        Objects['ArmorBarText'].Visible = true
-                    end
-
-                    local FlooredArmor = Floor(Data['Armor'])
-
-                    if Data['LastArmorFloor'] ~= FlooredArmor then
-                        Objects['ArmorBarText'].Text = Format('%d', FlooredArmor)
-                        Data['LastArmorFloor'] = FlooredArmor
-                    end
-                else
-                    if Objects['ArmorBarText'].Visible then
-                        Objects['ArmorBarText'].Visible = false
-                    end
-                end
-            else
-                if Objects['BottomBarHolder'].Visible then
-                    Objects['BottomBarHolder'].Visible = false
-                end
-
-                if Objects['ArmorBarOutline'].Visible then
-                    Objects['ArmorBarOutline'].Visible = false
-                end
-
-                if Objects['ArmorBarText'].Visible then
-                    Objects['ArmorBarText'].Visible = false
-                end
-            end
-
-            local WeaponCfg = TextsCfg['Weapon']
-
-            if WeaponCfg['Enabled'] then
-                if not Objects['Weapon'].Visible then
-                    Objects['Weapon'].Visible = true
-                end
-
-                local CurrentTool = Data['CurrentTool'] or 'none'
-
-                if Data['LastWeapon'] ~= CurrentTool then
-                    Objects['Weapon'].Text = CurrentTool
-                    Data['LastWeapon'] = CurrentTool
-                end
-
-                local WeaponColor = WeaponCfg['Color']
-
-                if Data['LastWeaponColor'] ~= WeaponColor then
-                    Objects['Weapon'].TextColor3 = WeaponColor
-                    Data['LastWeaponColor'] = WeaponColor
-                end
-            else
-                if Objects['Weapon'].Visible then
-                    Objects['Weapon'].Visible = false
-                end
-            end
-        end
-
-        do
-            Library:CreateThreads('Renderer', RunService.RenderStepped, function()
-                if not Table['Enabled'] then
-                    for _, Data in pairs(Library['Cache']) do
-                        if Data['Objects']['TargetHolder'].Visible then
-                            Data['Objects']['TargetHolder'].Visible = false
-                        end;
-                    end;
-                    return
-                end;
-
-                local Now = os.clock();
-
-                if Now - Updates < Frame then
-                    return;
-                end;
-
-                Updates = Now;
-                CameraPosition = Camera.CFrame.Position;
-
-                for Player, Data in pairs(Library['Cache']) do
-                    Library:Update(Player, Data)
-                end
-            end)
-        end
-
-        do
-            for _, Player in Players:GetPlayers() do
-                Library:AddTarget(Player)
-            end
-
-            Library:CreateThreads('PlayerAdded', Players.PlayerAdded, function(Player)
-                Library:AddTarget(Player)
-            end)
-
-            Library:CreateThreads('PlayerRemoving', Players.PlayerRemoving, function(Player)
-                Library:RemoveTarget(Player)
-            end)
-        end
-
-        do
-            function Library:Unload()
-                for Player in pairs(self['Cache']) do
-                    self:RemoveTarget(Player);
-                end;
-
-                for _, Conn in pairs(self['Connections']) do
-                    Conn:Disconnect();
-                end;
-
-                Clear(self['Connections']);
-
-                for _, Conn in pairs(self['Threads']) do
-                    Conn:Disconnect();
-                end;
-
-                Clear(self['Threads']);
-
-                if self['Holder'] then
-                    self['Holder']:Destroy();
-                    self['Holder'] = nil;
-                end;
-
-                Clear(self['Cache']);
-            end
-        end
-
-        return Library
+        return
+    end
+
+    local now = os.clock()
+    if now - LastUpdate < FRAME_BUDGET then return end
+
+    LastUpdate       = now
+    CameraPosition   = Camera.CFrame.Position
+
+    for player, data in pairs(Library.Cache) do
+        Library:Update(player, data)
+    end
+end)
+
+--------------------------------------------------------------------------------
+-- Player tracking
+--------------------------------------------------------------------------------
+
+for _, player in Players:GetPlayers() do
+    Library:AddTarget(player)
+end
+
+Library:Track("PlayerAdded", Players.PlayerAdded, function(player)
+    Library:AddTarget(player)
+end)
+
+Library:Track("PlayerRemoving", Players.PlayerRemoving, function(player)
+    Library:RemoveTarget(player)
+end)
+
+--------------------------------------------------------------------------------
+-- Unload
+--------------------------------------------------------------------------------
+
+function Library:Unload()
+    for player in pairs(self.Cache) do
+        self:RemoveTarget(player)
+    end
+
+    for _, conn in pairs(self.Connections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    Clear(self.Connections)
+
+    for _, conn in pairs(self.Threads) do
+        pcall(function() conn:Disconnect() end)
+    end
+    Clear(self.Threads)
+
+    if self.Holder then
+        pcall(function() self.Holder:Destroy() end)
+        self.Holder = nil
+    end
+
+    Clear(self.Cache)
+end
+
+return Library
