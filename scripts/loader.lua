@@ -23,6 +23,11 @@ local games = {
         script = "sag.lua",
         find = { universe = 10563114921 }
     },
+        {
+        display = "Dungeon Lootr",
+        script = "lootr.lua",
+        find = { universe = 9656201728 }
+    },
 }
 
 local place = game.PlaceId
