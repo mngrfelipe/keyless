@@ -28,6 +28,11 @@ local games = {
         script = "lootr.lua",
         find = { universe = 9656201728 }
     },
+     {
+        display = "Arcane Lineage",
+        script = "ArcaneLineage.lua",
+        find = { universe = 3846592040 }
+    },
 }
 
 local place = game.PlaceId
