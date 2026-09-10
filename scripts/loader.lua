@@ -33,6 +33,11 @@ local games = {
         script = "ArcaneLineage.lua",
         find = { universe = 3846592040 }
     },
+    {
+        display = "Greedy Growers",
+        script = "GreedyG.lua",
+        find = { universe = 10440833423 }
+    },
 }
 
 local place = game.PlaceId
