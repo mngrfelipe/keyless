@@ -35,7 +35,7 @@ local games = {
     },
     {
         display = "Greedy Growers",
-        script = "GreedyG.lua",
+        script = "GreedyGv1.lua",
         find = { universe = 10440833423 }
     },
 }
