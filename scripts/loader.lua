@@ -38,6 +38,11 @@ local games = {
         script = "GreedyG.lua",
         find = { universe = 10440833423 }
     },
+     {
+        display = "MM2",
+        script = "MM2.lua",
+        find = { universe = 66654135 }
+    },
 }
 
 local place = game.PlaceId
